@@ -1,25 +1,27 @@
-package main
+package config
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/daggerpov/slack-recurring-messages-scheduler/internal/types"
 )
 
 const (
-	credentialsFileName = ".slack-scheduler-credentials.json"
+	CredentialsFileName = ".slack-scheduler-credentials.json"
 )
 
 // LoadCredentials loads credentials from the config file in the current directory
-func LoadCredentials() (*Credentials, error) {
+func LoadCredentials() (*types.Credentials, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("could not determine current directory: %w", err)
 	}
 
-	path := filepath.Join(cwd, credentialsFileName)
-	creds, err := loadCredentialsFromFile(path)
+	path := filepath.Join(cwd, CredentialsFileName)
+	creds, err := LoadCredentialsFromFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("credentials file not found at %s\n\n"+
 			"Create it with your Slack token:\n"+
@@ -33,13 +35,13 @@ func LoadCredentials() (*Credentials, error) {
 	return creds, nil
 }
 
-func loadCredentialsFromFile(path string) (*Credentials, error) {
+func LoadCredentialsFromFile(path string) (*types.Credentials, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
-	var creds Credentials
+	var creds types.Credentials
 	if err := json.Unmarshal(data, &creds); err != nil {
 		return nil, fmt.Errorf("failed to parse credentials file: %w", err)
 	}
@@ -58,14 +60,14 @@ func CreateTemplateCredentials() error {
 		return fmt.Errorf("could not determine current directory: %w", err)
 	}
 
-	path := filepath.Join(cwd, credentialsFileName)
+	path := filepath.Join(cwd, CredentialsFileName)
 
 	// Don't overwrite existing file
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("credentials file already exists at %s", path)
 	}
 
-	template := Credentials{
+	template := types.Credentials{
 		Token: "xoxp-your-user-token-here",
 	}
 

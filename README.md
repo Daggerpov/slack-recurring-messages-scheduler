@@ -1,8 +1,29 @@
-# Slack Repeated Schedule Sender
+# Slack Recurring Messages Scheduler
 
-A simple Go CLI tool to schedule Slack messages with support for recurring schedules.
+A Go CLI tool to schedule Slack messages with support for recurring schedules.
 
-<img width="1511" height="31" alt="image" src="https://github.com/user-attachments/assets/06ef0d3a-53be-4aba-a364-d3a674ba7c6b" />
+## Demo
+
+<h1 align="center">
+  Full Video on YouTube: <a href="https://youtu.be/ZcLI_l6oBdw">https://youtu.be/ZcLI_l6oBdw
+</a>
+</h1>
+
+<p align="center">
+  <a href="https://youtu.be/ZcLI_l6oBdw">
+    <img src="https://github.com/user-attachments/assets/1efa68db-4cb1-4b65-893a-64c572edf062" alt="Slack Repeated Schedule Sender Demo" width="1000" height="auto">
+  </a>
+</p>
+
+<p align="center">
+   Sorry for the lack of color in this clip. I used <a href="https://en.wikipedia.org/wiki/FFmpeg">ffmpeg</a> to compress this clip into a gif and had to choose between fps, resolution, and color 
+   <br>-> I chose resolution for legibility.
+</p>
+
+<img width="1180" height="64" alt="image" src="https://github.com/user-attachments/assets/5c38ab65-e689-4d3e-943f-1adf2a341275" />
+
+<br>
+</br>
 
 `./slack-scheduler help` output:
 
@@ -32,21 +53,23 @@ Examples:
 
 Available Commands:
   completion  Generate the autocompletion script for the specified shell
+  delete      Delete scheduled messages
   help        Help about any command
   init        Create a credentials template file
+  list        List all scheduled messages
 
 Flags:
   -c, --channel string    Channel name or ID to send to
-  -n, --count int         Number of times to send (for repeating schedules) (default 1)
+  -n, --count int         Number of times to send (0 = use end date or default to 1)
   -d, --date string       Start date (YYYY-MM-DD)
       --days string       Days of week for weekly schedule (comma-separated: mon,tue,wed,thu,fri,sat,sun)
+  -e, --end-date string   End date (YYYY-MM-DD). Schedules messages until this date
   -h, --help              help for slack-scheduler
   -i, --interval string   Repeat interval: none, daily, weekly, monthly (default "none")
   -m, --message string    Message to send (supports @mentions, emoji, Slack formatting)
   -t, --time string       Time to send (HH:MM, 24-hour format, local time)
 
 Use "slack-scheduler [command] --help" for more information about a command.
-
 
 ```
 
@@ -62,14 +85,35 @@ Use "slack-scheduler [command] --help" for more information about a command.
 
 ```bash
 # Clone the repo
-git clone https://github.com/daggerpov/slack-repeated-schedule-sender.git
-cd slack-repeated-schedule-sender
+git clone https://github.com/daggerpov/slack-recurring-messages-scheduler.git
+cd slack-recurring-messages-scheduler
 
 # Build
-go build -o slack-scheduler
+make build
 
 # Or install globally
-go install
+make install
+```
+
+## Project Structure
+
+This project follows the [Go standard project layout](https://github.com/golang-standards/project-layout):
+
+```
+.
+├── cmd/
+│   └── slack-scheduler/    # Main application entry point
+│       ├── main.go
+│       └── main_test.go
+├── internal/               # Private application code
+│   ├── config/             # Configuration & credentials handling
+│   ├── scheduler/          # Scheduling logic
+│   ├── slack/              # Slack API client wrapper
+│   └── types/              # Shared type definitions
+├── go.mod
+├── go.sum
+├── Makefile
+└── README.md
 ```
 
 ## Setup
@@ -107,7 +151,7 @@ chmod 600 .slack-scheduler-credentials.json
 ## Usage
 
 ```bash
-slack-scheduler [flags]
+./slack-scheduler [flags]
 ```
 
 ### Required Flags
@@ -125,18 +169,19 @@ slack-scheduler [flags]
 |------|-------|---------|-------------|
 | `--interval` | `-i` | `none` | Repeat interval: `none`, `daily`, `weekly`, `monthly` |
 | `--count` | `-n` | `1` | Number of times to send |
+| `--end-date` | `-e` | | End date (YYYY-MM-DD). Recurrence stops on or before this date |
 | `--days` | | | Days of week (comma-separated: `mon,tue,wed,thu,fri,sat,sun`) |
 
 ### Examples
 
 **One-time message:**
 ```bash
-slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
+./slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
 ```
 
 **Every Friday at 2pm for 4 weeks:**
 ```bash
-slack-scheduler \
+./slack-scheduler \
   -m "Weekly reminder: Please submit your timesheets!" \
   -c general \
   -d 2025-01-17 \
@@ -147,7 +192,7 @@ slack-scheduler \
 
 **Monday and Friday at 9am for 8 occurrences:**
 ```bash
-slack-scheduler \
+./slack-scheduler \
   -m "Standup time! :coffee:" \
   -c engineering \
   -d 2025-01-13 \
@@ -159,7 +204,7 @@ slack-scheduler \
 
 **Daily reminder for 5 days:**
 ```bash
-slack-scheduler \
+./slack-scheduler \
   -m "@channel Don't forget to check your PRs" \
   -c dev-team \
   -d 2025-01-13 \
@@ -170,7 +215,7 @@ slack-scheduler \
 
 **Monthly report reminder:**
 ```bash
-slack-scheduler \
+./slack-scheduler \
   -m "Monthly metrics report due this week" \
   -c analytics \
   -d 2025-01-01 \
@@ -178,6 +223,31 @@ slack-scheduler \
   -i monthly \
   -n 12
 ```
+
+
+**Sundays until April 10th (stops at last Sunday on or before end date):**
+```bash
+./slack-scheduler \
+  -m "Weekly Sunday update" \
+  -c team-updates \
+  -d 2025-01-05 \
+  -t 10:00 \
+  -i weekly \
+  --days sun \
+  -e 2025-04-10
+```
+
+**Daily messages until a specific date:**
+```bash
+./slack-scheduler \
+  -m "Daily standup reminder" \
+  -c engineering \
+  -d 2025-01-13 \
+  -t 09:00 \
+  -i daily \
+  -e 2025-01-31
+```
+
 
 ## Message Formatting
 
@@ -189,11 +259,52 @@ The message field supports full Slack formatting:
 - **Links:** `<https://example.com|Click here>`
 - **Code:** `` `code` ``, ` ```code block``` `
 
+## Managing Scheduled Messages
+
+### List Scheduled Messages
+
+View all messages you've scheduled via the API:
+
+```bash
+# List all scheduled messages
+./slack-scheduler list
+
+# List scheduled messages for a specific channel
+./slack-scheduler list -c general
+```
+
+### Delete Scheduled Messages
+
+Cancel scheduled messages:
+
+```bash
+# Delete a specific scheduled message by ID
+./slack-scheduler delete -c general --id Q0A7Z0QMWAF
+
+# Delete ALL scheduled messages in a channel
+./slack-scheduler delete -c general --all
+```
+
+## Important: Slack UI Limitation ⚠️ **Messages scheduled via the Slack API do NOT appear in Slack's "Scheduled Messages" UI.**
+
+This is a Slack platform limitation, not a bug. Here's what this means:
+
+| Scheduled via | Visible in Slack UI | Actually sends |
+|--------------|---------------------|----------------|
+| Slack app (typing /schedule or clicking schedule) | ✅ Yes | ✅ Yes |
+| This CLI tool (API) | ❌ No | ✅ Yes |
+
+**Your messages ARE scheduled and WILL be sent** — you just can't see them in Slack's desktop/mobile app.
+
+To view and manage API-scheduled messages, use:
+- `./slack-scheduler list` — see all scheduled messages
+- `./slack-scheduler delete` — cancel scheduled messages
+
 ## Limitations
 
 - Slack only allows scheduling messages up to **120 days** in advance
 - Past times are automatically skipped
-- The tool schedules messages via Slack's API, so they appear as scheduled messages in Slack
+- API-scheduled messages don't appear in Slack's UI (see above), but they will still be sent on schedule
 
 ## Credentials File
 
@@ -206,9 +317,3 @@ Format:
   "token": "xoxp-your-user-oauth-token"
 }
 ```
-
-⚠️ **Never commit your credentials file!** It's already in `.gitignore`.
-
-## License
-
-MIT
