@@ -146,3 +146,41 @@ func (c *SlackClient) GetChannelID(channelName string) (string, error) {
 
 	return "", fmt.Errorf("channel not found: %s", channelName)
 }
+
+// GetChannelName resolves a channel ID to its human-readable name
+func (c *SlackClient) GetChannelName(channelID string) (string, error) {
+	// List channels to find the name
+	channels, _, err := c.api.GetConversations(&slack.GetConversationsParameters{
+		Types: []string{"public_channel", "private_channel"},
+		Limit: 1000,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to list channels: %w", err)
+	}
+
+	for _, ch := range channels {
+		if ch.ID == channelID {
+			return ch.Name, nil
+		}
+	}
+
+	// Return the ID if we can't find the name
+	return channelID, nil
+}
+
+// GetChannelNameMap returns a map of channel IDs to names
+func (c *SlackClient) GetChannelNameMap() (map[string]string, error) {
+	channels, _, err := c.api.GetConversations(&slack.GetConversationsParameters{
+		Types: []string{"public_channel", "private_channel"},
+		Limit: 1000,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list channels: %w", err)
+	}
+
+	nameMap := make(map[string]string)
+	for _, ch := range channels {
+		nameMap[ch.ID] = ch.Name
+	}
+	return nameMap, nil
+}

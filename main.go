@@ -3,8 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
+	"github.com/slack-go/slack"
 	"github.com/spf13/cobra"
 )
 
@@ -23,10 +28,26 @@ var (
 	listChannel string
 
 	// CLI flags for delete command
-	deleteChannel string
-	deleteID      string
-	deleteAll     bool
+	deleteAll bool
 )
+
+// IndexedMessage wraps a scheduled message with a simple integer ID
+type IndexedMessage struct {
+	Index      int
+	SlackID    string
+	ChannelID  string
+	ChannelName string
+	Text       string
+	PostAt     time.Time
+	GroupLabel string
+}
+
+// MessageGroup represents a group of messages with the same text
+type MessageGroup struct {
+	Label    string
+	Text     string
+	Messages []*IndexedMessage
+}
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -98,23 +119,26 @@ Use this command to see and manage API-scheduled messages.`,
 
 	// Delete command to cancel scheduled messages
 	deleteCmd := &cobra.Command{
-		Use:   "delete",
+		Use:   "delete [IDs or Groups...]",
 		Short: "Delete scheduled messages",
-		Long: `Delete (cancel) scheduled messages by ID.
+		Long: `Delete (cancel) scheduled messages by ID or group.
 
-Use 'slack-scheduler list' to find message IDs.
-You can delete a single message by ID, or all messages in a channel with --all.`,
-		Example: `  # Delete a specific scheduled message
-  slack-scheduler delete -c general --id Q0A7Z0QMWAF
+Use 'slack-scheduler list' to find message IDs and groups.
+You can delete multiple messages at once using IDs (integers) or group labels (letters).`,
+		Example: `  # Delete specific messages by ID
+  slack-scheduler delete 1 2 4
 
-  # Delete all scheduled messages in a channel
-  slack-scheduler delete -c general --all`,
+  # Delete all messages in a group
+  slack-scheduler delete A
+
+  # Mix IDs and groups
+  slack-scheduler delete A 4 5
+
+  # Delete all scheduled messages
+  slack-scheduler delete --all`,
 		RunE: runDelete,
 	}
-	deleteCmd.Flags().StringVarP(&deleteChannel, "channel", "c", "", "Channel name or ID (required)")
-	deleteCmd.Flags().StringVar(&deleteID, "id", "", "Scheduled message ID to delete")
-	deleteCmd.Flags().BoolVar(&deleteAll, "all", false, "Delete all scheduled messages in the channel")
-	deleteCmd.MarkFlagRequired("channel")
+	deleteCmd.Flags().BoolVar(&deleteAll, "all", false, "Delete all scheduled messages")
 	rootCmd.AddCommand(deleteCmd)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -215,6 +239,103 @@ func runSchedule(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// generateGroupLabel generates a group label like A, B, ..., Z, A2, B2, ...
+func generateGroupLabel(index int) string {
+	letter := 'A' + rune(index%26)
+	cycle := index / 26
+	if cycle == 0 {
+		return string(letter)
+	}
+	return fmt.Sprintf("%c%d", letter, cycle+1)
+}
+
+// parseGroupLabel parses a group label like "A", "B2" into an index
+func parseGroupLabel(label string) (int, bool) {
+	label = strings.ToUpper(strings.TrimSpace(label))
+	if len(label) == 0 {
+		return 0, false
+	}
+
+	letter := label[0]
+	if letter < 'A' || letter > 'Z' {
+		return 0, false
+	}
+
+	letterIndex := int(letter - 'A')
+	
+	if len(label) == 1 {
+		return letterIndex, true
+	}
+
+	// Parse the cycle number (e.g., "2" from "A2")
+	cycleStr := label[1:]
+	cycle, err := strconv.Atoi(cycleStr)
+	if err != nil || cycle < 2 {
+		return 0, false
+	}
+
+	return letterIndex + (cycle-1)*26, true
+}
+
+// buildIndexedMessages creates IndexedMessage list from Slack messages
+func buildIndexedMessages(messages []slack.ScheduledMessage, channelNameMap map[string]string) []*IndexedMessage {
+	// Sort messages by post time for consistent ordering
+	sort.Slice(messages, func(i, j int) bool {
+		return messages[i].PostAt < messages[j].PostAt
+	})
+
+	indexed := make([]*IndexedMessage, len(messages))
+	for i, msg := range messages {
+		channelName := channelNameMap[msg.Channel]
+		if channelName == "" {
+			channelName = msg.Channel
+		}
+		indexed[i] = &IndexedMessage{
+			Index:       i + 1, // 1-based indexing
+			SlackID:     msg.ID,
+			ChannelID:   msg.Channel,
+			ChannelName: channelName,
+			Text:        msg.Text,
+			PostAt:      time.Unix(int64(msg.PostAt), 0).In(localTZ),
+		}
+	}
+	return indexed
+}
+
+// groupMessages groups messages by their text content
+func groupMessages(messages []*IndexedMessage) []*MessageGroup {
+	// Group by text
+	textGroups := make(map[string][]*IndexedMessage)
+	textOrder := []string{} // Maintain order of first occurrence
+	
+	for _, msg := range messages {
+		if _, exists := textGroups[msg.Text]; !exists {
+			textOrder = append(textOrder, msg.Text)
+		}
+		textGroups[msg.Text] = append(textGroups[msg.Text], msg)
+	}
+
+	// Create groups with labels
+	groups := make([]*MessageGroup, len(textOrder))
+	for i, text := range textOrder {
+		label := generateGroupLabel(i)
+		msgs := textGroups[text]
+		
+		// Assign group label to each message
+		for _, msg := range msgs {
+			msg.GroupLabel = label
+		}
+		
+		groups[i] = &MessageGroup{
+			Label:    label,
+			Text:     text,
+			Messages: msgs,
+		}
+	}
+
+	return groups
+}
+
 func runList(cmd *cobra.Command, args []string) error {
 	// Load credentials
 	creds, err := LoadCredentials()
@@ -249,29 +370,79 @@ func runList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("\nFound %d scheduled message(s):\n\n", len(messages))
-	for _, msg := range messages {
-		postAt := time.Unix(int64(msg.PostAt), 0).In(localTZ)
-		text := msg.Text
-		if len(text) > 60 {
-			text = text[:60] + "..."
-		}
-		fmt.Printf("  ID: %s\n", msg.ID)
-		fmt.Printf("  Channel: %s\n", msg.Channel)
-		fmt.Printf("  Scheduled: %s\n", postAt.Format("Mon Jan 02, 2006 at 03:04 PM MST"))
-		fmt.Printf("  Message: %s\n\n", text)
+	// Get channel name map
+	channelNameMap, err := client.GetChannelNameMap()
+	if err != nil {
+		// Non-fatal, we'll just use IDs
+		channelNameMap = make(map[string]string)
 	}
+
+	// Build indexed messages and groups
+	indexed := buildIndexedMessages(messages, channelNameMap)
+	groups := groupMessages(indexed)
+
+	fmt.Printf("\nFound %d scheduled message(s) in %d group(s):\n", len(messages), len(groups))
+
+	for _, group := range groups {
+		// Truncate message text for display
+		displayText := group.Text
+		if len(displayText) > 60 {
+			displayText = displayText[:60] + "..."
+		}
+		
+		fmt.Printf("\n━━━ Group %s ━━━\n", group.Label)
+		fmt.Printf("    Message: %s\n", displayText)
+		
+		for _, msg := range group.Messages {
+			fmt.Printf("\n    ID: %d\n", msg.Index)
+			fmt.Printf("    Channel: #%s\n", msg.ChannelName)
+			fmt.Printf("    Scheduled: %s\n", msg.PostAt.Format("Mon Jan 02, 2006 at 03:04 PM MST"))
+		}
+	}
+	fmt.Println()
 
 	return nil
 }
 
-func runDelete(cmd *cobra.Command, args []string) error {
-	// Validate flags
-	if deleteID == "" && !deleteAll {
-		return fmt.Errorf("must specify either --id or --all")
+// isGroupLabel checks if a string is a valid group label (letter or letter+number)
+func isGroupLabel(s string) bool {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	if len(s) == 0 {
+		return false
 	}
-	if deleteID != "" && deleteAll {
-		return fmt.Errorf("cannot use both --id and --all")
+	
+	// First character must be a letter
+	if s[0] < 'A' || s[0] > 'Z' {
+		return false
+	}
+	
+	// Single letter is valid
+	if len(s) == 1 {
+		return true
+	}
+	
+	// Rest must be digits >= 2
+	for _, c := range s[1:] {
+		if !unicode.IsDigit(c) {
+			return false
+		}
+	}
+	
+	// Check the number is >= 2
+	if num, err := strconv.Atoi(s[1:]); err != nil || num < 2 {
+		return false
+	}
+	
+	return true
+}
+
+func runDelete(cmd *cobra.Command, args []string) error {
+	// Validate arguments
+	if len(args) == 0 && !deleteAll {
+		return fmt.Errorf("must specify message IDs, group labels, or --all\nUsage: slack-scheduler delete [IDs or Groups...] or slack-scheduler delete --all")
+	}
+	if len(args) > 0 && deleteAll {
+		return fmt.Errorf("cannot specify both IDs/groups and --all")
 	}
 
 	// Load credentials
@@ -287,45 +458,108 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println("✓ Credentials validated")
 
-	// Resolve channel ID
-	channelID, err := client.GetChannelID(deleteChannel)
+	// Get all scheduled messages
+	messages, err := client.ListScheduledMessages("")
 	if err != nil {
 		return err
 	}
 
-	if deleteAll {
-		// Get all scheduled messages for this channel
-		messages, err := client.ListScheduledMessages(channelID)
-		if err != nil {
-			return err
-		}
-
-		if len(messages) == 0 {
-			fmt.Println("\nNo scheduled messages found in this channel.")
-			return nil
-		}
-
-		fmt.Printf("\nDeleting %d scheduled message(s) from channel %s...\n", len(messages), channelID)
-		deleted := 0
-		for _, msg := range messages {
-			if msg.Channel == channelID {
-				if err := client.DeleteScheduledMessage(channelID, msg.ID); err != nil {
-					fmt.Printf("  ✗ Failed to delete %s: %v\n", msg.ID, err)
-				} else {
-					fmt.Printf("  ✓ Deleted %s\n", msg.ID)
-					deleted++
-				}
-			}
-		}
-		fmt.Printf("\n✓ Deleted %d message(s)\n", deleted)
-	} else {
-		// Delete single message
-		fmt.Printf("\nDeleting scheduled message %s...\n", deleteID)
-		if err := client.DeleteScheduledMessage(channelID, deleteID); err != nil {
-			return err
-		}
-		fmt.Printf("✓ Deleted scheduled message %s\n", deleteID)
+	if len(messages) == 0 {
+		fmt.Println("\nNo scheduled messages found.")
+		return nil
 	}
+
+	// Get channel name map for display
+	channelNameMap, err := client.GetChannelNameMap()
+	if err != nil {
+		channelNameMap = make(map[string]string)
+	}
+
+	// Build indexed messages and groups
+	indexed := buildIndexedMessages(messages, channelNameMap)
+	groups := groupMessages(indexed)
+
+	// Create lookup maps
+	indexToMsg := make(map[int]*IndexedMessage)
+	for _, msg := range indexed {
+		indexToMsg[msg.Index] = msg
+	}
+
+	groupLabelToGroup := make(map[string]*MessageGroup)
+	for _, g := range groups {
+		groupLabelToGroup[strings.ToUpper(g.Label)] = g
+	}
+
+	// Collect messages to delete
+	toDelete := make(map[int]*IndexedMessage) // Use map to avoid duplicates
+
+	if deleteAll {
+		for _, msg := range indexed {
+			toDelete[msg.Index] = msg
+		}
+	} else {
+		for _, arg := range args {
+			arg = strings.TrimSpace(arg)
+			
+			// Try to parse as integer ID first
+			if id, err := strconv.Atoi(arg); err == nil {
+				msg, exists := indexToMsg[id]
+				if !exists {
+					return fmt.Errorf("message ID %d not found (valid IDs: 1-%d)", id, len(indexed))
+				}
+				toDelete[msg.Index] = msg
+				continue
+			}
+			
+			// Try to parse as group label
+			if isGroupLabel(arg) {
+				group, exists := groupLabelToGroup[strings.ToUpper(arg)]
+				if !exists {
+					validLabels := make([]string, len(groups))
+					for i, g := range groups {
+						validLabels[i] = g.Label
+					}
+					return fmt.Errorf("group %s not found (valid groups: %s)", strings.ToUpper(arg), strings.Join(validLabels, ", "))
+				}
+				for _, msg := range group.Messages {
+					toDelete[msg.Index] = msg
+				}
+				continue
+			}
+			
+			return fmt.Errorf("invalid argument: %s (expected integer ID or group label like A, B, A2, etc.)", arg)
+		}
+	}
+
+	if len(toDelete) == 0 {
+		fmt.Println("\nNo messages to delete.")
+		return nil
+	}
+
+	// Sort by ID for consistent output
+	var sortedMsgs []*IndexedMessage
+	for _, msg := range toDelete {
+		sortedMsgs = append(sortedMsgs, msg)
+	}
+	sort.Slice(sortedMsgs, func(i, j int) bool {
+		return sortedMsgs[i].Index < sortedMsgs[j].Index
+	})
+
+	fmt.Printf("\nDeleting %d scheduled message(s)...\n", len(sortedMsgs))
+	deleted := 0
+	for _, msg := range sortedMsgs {
+		if err := client.DeleteScheduledMessage(msg.ChannelID, msg.SlackID); err != nil {
+			fmt.Printf("  ✗ Failed to delete ID %d (#%s): %v\n", msg.Index, msg.ChannelName, err)
+		} else {
+			displayText := msg.Text
+			if len(displayText) > 40 {
+				displayText = displayText[:40] + "..."
+			}
+			fmt.Printf("  ✓ Deleted ID %d (#%s): %s\n", msg.Index, msg.ChannelName, displayText)
+			deleted++
+		}
+	}
+	fmt.Printf("\n✓ Deleted %d message(s)\n", deleted)
 
 	return nil
 }
