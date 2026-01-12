@@ -8,4 +8,4 @@ This is a command line interface to schedule send
 - [] `./slack-scheduler help` -> show args
 - [] send a quick test command to channel
 - [] schedule a more complex (recurring) one
-- [] list & delete commands
+- [] list & delete commands usage due to Slack's limitations

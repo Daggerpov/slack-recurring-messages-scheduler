@@ -84,8 +84,8 @@ Messages are scheduled using your system's local timezone.`,
 
 	// Optional flags
 	rootCmd.Flags().StringVarP(&interval, "interval", "i", "none", "Repeat interval: none, daily, weekly, monthly")
-	rootCmd.Flags().IntVarP(&repeatCount, "count", "n", 1, "Number of times to send (for repeating schedules)")
-	rootCmd.Flags().StringVarP(&endDate, "end-date", "e", "", "End date (YYYY-MM-DD). Recurrence stops on or before this date")
+	rootCmd.Flags().IntVarP(&repeatCount, "count", "n", 0, "Number of times to send (0 = use end date or default to 1)")
+	rootCmd.Flags().StringVarP(&endDate, "end-date", "e", "", "End date (YYYY-MM-DD). Schedules messages until this date")
 	rootCmd.Flags().StringVar(&days, "days", "", "Days of week for weekly schedule (comma-separated: mon,tue,wed,thu,fri,sat,sun)")
 
 	// Init command to create credentials template

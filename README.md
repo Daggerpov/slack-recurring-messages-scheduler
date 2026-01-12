@@ -193,9 +193,7 @@ slack-scheduler delete -c general --id Q0A7Z0QMWAF
 slack-scheduler delete -c general --all
 ```
 
-## Important: Slack UI Limitation
-
-⚠️ **Messages scheduled via the Slack API do NOT appear in Slack's "Scheduled Messages" UI.**
+## Important: Slack UI Limitation ⚠️ **Messages scheduled via the Slack API do NOT appear in Slack's "Scheduled Messages" UI.**
 
 This is a Slack platform limitation, not a bug. Here's what this means:
 
