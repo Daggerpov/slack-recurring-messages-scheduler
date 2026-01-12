@@ -548,8 +548,18 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nDeleting %d scheduled message(s)...\n", len(sortedMsgs))
 	deleted := 0
 	for _, msg := range sortedMsgs {
+		// Check for empty Slack ID
+		if msg.SlackID == "" {
+			fmt.Printf("  ✗ Failed to delete ID %d (#%s): no Slack message ID available\n", msg.Index, msg.ChannelName)
+			continue
+		}
 		if err := client.DeleteScheduledMessage(msg.ChannelID, msg.SlackID); err != nil {
 			fmt.Printf("  ✗ Failed to delete ID %d (#%s): %v\n", msg.Index, msg.ChannelName, err)
+			// Check if the scheduled time has passed
+			if msg.PostAt.Before(time.Now()) {
+				fmt.Printf("      Note: This message was scheduled for %s which has already passed.\n", msg.PostAt.Format("03:04 PM"))
+				fmt.Printf("      The message may have already been sent and is no longer a scheduled message.\n")
+			}
 		} else {
 			displayText := msg.Text
 			if len(displayText) > 40 {
