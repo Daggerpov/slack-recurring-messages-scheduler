@@ -153,6 +153,13 @@ func runSchedule(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid interval: %s (use: none, daily, weekly, monthly)", interval)
 	}
 
+	// Check if user specified -n or -e without -i
+	if intervalType == IntervalNone && (repeatCount > 1 || endDate != "") {
+		return fmt.Errorf("to create a recurring schedule, you must specify -i (interval)\n" +
+			"Example: slack-scheduler -m \"Hello\" -c general -d 2025-01-17 -t 14:00 -i daily -n 5\n" +
+			"Use -i with: daily, weekly, or monthly")
+	}
+
 	// Parse days of week
 	parsedDays, err := ParseDaysOfWeek(days)
 	if err != nil {
