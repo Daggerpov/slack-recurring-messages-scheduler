@@ -8,7 +8,7 @@ A simple Go CLI tool to schedule Slack messages with support for recurring sched
 - Recurring messages (daily, weekly, monthly)
 - Specific days of the week for weekly schedules
 - Full Slack formatting support (@mentions, emoji, links, etc.)
-- Messages sent in Pacific time
+- Uses your system's local timezone
 
 ## Installation
 
@@ -69,7 +69,7 @@ slack-scheduler [flags]
 | `--message` | `-m` | Message to send (supports @mentions, emoji, formatting) |
 | `--channel` | `-c` | Channel name or ID |
 | `--date` | `-d` | Start date (YYYY-MM-DD) |
-| `--time` | `-t` | Time to send (HH:MM, 24-hour, Pacific time) |
+| `--time` | `-t` | Time to send (HH:MM, 24-hour, local time) |
 
 ### Optional Flags
 

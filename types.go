@@ -99,7 +99,7 @@ type ScheduleConfig struct {
 	// Start date in YYYY-MM-DD format
 	StartDate string `json:"start_date"`
 
-	// Time to send in HH:MM format (24-hour, Pacific time)
+	// Time to send in HH:MM format (24-hour, local time)
 	SendTime string `json:"send_time"`
 
 	// Repeat interval

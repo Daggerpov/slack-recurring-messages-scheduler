@@ -29,7 +29,7 @@ func main() {
 - Specific days of the week for weekly schedules
 - Full Slack formatting support (@mentions, emoji, etc.)
 
-Messages are scheduled using Pacific time (America/Los_Angeles).`,
+Messages are scheduled using your system's local timezone.`,
 		Example: `  # Send a one-time message
   slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
 
@@ -45,7 +45,7 @@ Messages are scheduled using Pacific time (America/Los_Angeles).`,
 	rootCmd.Flags().StringVarP(&message, "message", "m", "", "Message to send (supports @mentions, emoji, Slack formatting)")
 	rootCmd.Flags().StringVarP(&channel, "channel", "c", "", "Channel name or ID to send to")
 	rootCmd.Flags().StringVarP(&startDate, "date", "d", "", "Start date (YYYY-MM-DD)")
-	rootCmd.Flags().StringVarP(&sendTime, "time", "t", "", "Time to send (HH:MM, 24-hour format, Pacific time)")
+	rootCmd.Flags().StringVarP(&sendTime, "time", "t", "", "Time to send (HH:MM, 24-hour format, local time)")
 
 	rootCmd.MarkFlagRequired("message")
 	rootCmd.MarkFlagRequired("channel")
