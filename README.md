@@ -51,9 +51,9 @@ go install
 # Create template
 ./slack-scheduler init
 
-# Or manually create ~/.slack-scheduler-credentials.json
-echo '{"token": "xoxp-your-token-here"}' > ~/.slack-scheduler-credentials.json
-chmod 600 ~/.slack-scheduler-credentials.json
+# Or manually create .slack-scheduler-credentials.json
+echo '{"token": "xoxp-your-token-here"}' > .slack-scheduler-credentials.json
+chmod 600 .slack-scheduler-credentials.json
 ```
 
 ## Usage
@@ -149,9 +149,8 @@ The message field supports full Slack formatting:
 
 ## Credentials File
 
-The tool looks for credentials in:
-1. `./.slack-scheduler-credentials.json` (current directory)
-2. `~/.slack-scheduler-credentials.json` (home directory)
+The credentials file should be in the project directory:
+- `./.slack-scheduler-credentials.json`
 
 Format:
 ```json
