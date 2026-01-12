@@ -160,6 +160,11 @@ func (s *Scheduler) calculateSpecificDaysTimes(start time.Time, endDate *time.Ti
 	current := start
 	count := s.config.RepeatCount
 
+	// If no end date and count <= 0, default to 1 (safety: don't schedule infinite messages)
+	if endDate == nil && count <= 0 {
+		count = 1
+	}
+
 	// Map DayOfWeek to time.Weekday
 	dayMap := map[DayOfWeek]time.Weekday{
 		Monday:    time.Monday,
