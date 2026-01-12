@@ -35,7 +35,10 @@ func (c *SlackClient) SendMessage(channel, message string) error {
 // ScheduleMessage schedules a message to be sent at a specific time
 func (c *SlackClient) ScheduleMessage(channel, message string, postAt time.Time) (string, error) {
 	// Slack API expects Unix timestamp as string
-	respChannel, scheduledID, err := c.api.ScheduleMessage(
+	// Note: ScheduleMessage returns (channelID, scheduledTime, error)
+	// For scheduled messages, the timestamp may be empty until the message is sent
+	// The scheduled_message_id is in the API response but not exposed by the library
+	respChannel, scheduledTime, err := c.api.ScheduleMessage(
 		channel,
 		fmt.Sprintf("%d", postAt.Unix()),
 		slack.MsgOptionText(message, false),
@@ -44,8 +47,26 @@ func (c *SlackClient) ScheduleMessage(channel, message string, postAt time.Time)
 	if err != nil {
 		return "", fmt.Errorf("failed to schedule message: %w", err)
 	}
-	fmt.Printf("Scheduled message ID: %s in channel: %s\n", scheduledID, respChannel)
-	return scheduledID, nil
+	
+	// Log the scheduling result
+	// Note: For scheduled messages, scheduledTime may be empty (this is normal)
+	// The message is still scheduled even if the timestamp is empty
+	if scheduledTime != "" {
+		fmt.Printf("Scheduled message ID: %s in channel: %s\n", scheduledTime, respChannel)
+	} else {
+		// For scheduled messages, Slack may return empty timestamp
+		// The message is still scheduled - you can verify in Slack with /schedule list
+		fmt.Printf("Scheduled message for: %s in channel: %s\n", 
+			postAt.Format("2006-01-02 15:04 MST"), respChannel)
+		fmt.Printf("Note: Scheduled message ID not available until message is sent. Use '/schedule list' in Slack to verify.\n")
+	}
+	
+	// Return the scheduled timestamp (or postAt timestamp if empty) as identifier
+	if scheduledTime != "" {
+		return scheduledTime, nil
+	}
+	// Return the postAt timestamp as a fallback identifier
+	return fmt.Sprintf("%d", postAt.Unix()), nil
 }
 
 // ValidateCredentials checks if the token is valid by testing auth
