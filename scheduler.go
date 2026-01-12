@@ -34,6 +34,18 @@ func (s *Scheduler) CalculateScheduleTimes() ([]time.Time, error) {
 		return nil, err
 	}
 
+	// Parse end date if provided (set to end of day)
+	var endDateTime *time.Time
+	if s.config.EndDate != "" {
+		end, err := time.ParseInLocation("2006-01-02", s.config.EndDate, localTZ)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse end date: %w", err)
+		}
+		// Set to end of day (23:59:59)
+		endOfDay := time.Date(end.Year(), end.Month(), end.Day(), 23, 59, 59, 0, localTZ)
+		endDateTime = &endOfDay
+	}
+
 	var times []time.Time
 
 	switch s.config.Interval {
@@ -42,13 +54,13 @@ func (s *Scheduler) CalculateScheduleTimes() ([]time.Time, error) {
 		times = append(times, startDateTime)
 
 	case IntervalDaily:
-		times = s.calculateDailyTimes(startDateTime)
+		times = s.calculateDailyTimes(startDateTime, endDateTime)
 
 	case IntervalWeekly:
-		times = s.calculateWeeklyTimes(startDateTime)
+		times = s.calculateWeeklyTimes(startDateTime, endDateTime)
 
 	case IntervalMonthly:
-		times = s.calculateMonthlyTimes(startDateTime)
+		times = s.calculateMonthlyTimes(startDateTime, endDateTime)
 
 	default:
 		return nil, fmt.Errorf("invalid interval: %s", s.config.Interval)
@@ -66,43 +78,87 @@ func (s *Scheduler) parseDateTime(date, timeStr string) (time.Time, error) {
 	return t, nil
 }
 
-func (s *Scheduler) calculateDailyTimes(start time.Time) []time.Time {
-	count := s.config.RepeatCount
-	if count <= 0 {
-		count = 1
-	}
-
-	times := make([]time.Time, count)
-	for i := 0; i < count; i++ {
-		times[i] = start.AddDate(0, 0, i)
-	}
-	return times
-}
-
-func (s *Scheduler) calculateWeeklyTimes(start time.Time) []time.Time {
-	count := s.config.RepeatCount
-	if count <= 0 {
-		count = 1
-	}
-
+func (s *Scheduler) calculateDailyTimes(start time.Time, endDate *time.Time) []time.Time {
 	var times []time.Time
+	current := start
+	count := s.config.RepeatCount
 
-	// If specific days are specified, use them
-	if len(s.config.Days) > 0 {
-		times = s.calculateSpecificDaysTimes(start, count)
-	} else {
-		// Otherwise, repeat on the same day of week
-		for i := 0; i < count; i++ {
-			times = append(times, start.AddDate(0, 0, i*7))
+	// If no end date and count <= 0, default to 1
+	if endDate == nil && count <= 0 {
+		count = 1
+	}
+
+	for {
+		// Check if we've exceeded end date
+		if endDate != nil && current.After(*endDate) {
+			break
+		}
+
+		times = append(times, current)
+
+		// Check count limit (if count is set and positive)
+		if count > 0 && len(times) >= count {
+			break
+		}
+
+		// Move to next day
+		current = current.AddDate(0, 0, 1)
+
+		// Safety limit to prevent infinite loops (only if no end date)
+		if endDate == nil && current.After(start.AddDate(10, 0, 0)) {
+			break
 		}
 	}
 
 	return times
 }
 
-func (s *Scheduler) calculateSpecificDaysTimes(start time.Time, totalOccurrences int) []time.Time {
+func (s *Scheduler) calculateWeeklyTimes(start time.Time, endDate *time.Time) []time.Time {
+	var times []time.Time
+
+	// If specific days are specified, use them
+	if len(s.config.Days) > 0 {
+		times = s.calculateSpecificDaysTimes(start, endDate)
+	} else {
+		// Otherwise, repeat on the same day of week
+		current := start
+		count := s.config.RepeatCount
+
+		// If no end date and count <= 0, default to 1
+		if endDate == nil && count <= 0 {
+			count = 1
+		}
+
+		for {
+			// Check if we've exceeded end date
+			if endDate != nil && current.After(*endDate) {
+				break
+			}
+
+			times = append(times, current)
+
+			// Check count limit (if count is set and positive)
+			if count > 0 && len(times) >= count {
+				break
+			}
+
+			// Move to next week
+			current = current.AddDate(0, 0, 7)
+
+			// Safety limit to prevent infinite loops (only if no end date)
+			if endDate == nil && current.After(start.AddDate(5, 0, 0)) {
+				break
+			}
+		}
+	}
+
+	return times
+}
+
+func (s *Scheduler) calculateSpecificDaysTimes(start time.Time, endDate *time.Time) []time.Time {
 	var times []time.Time
 	current := start
+	count := s.config.RepeatCount
 
 	// Map DayOfWeek to time.Weekday
 	dayMap := map[DayOfWeek]time.Weekday{
@@ -122,14 +178,27 @@ func (s *Scheduler) calculateSpecificDaysTimes(start time.Time, totalOccurrences
 	}
 
 	// Find all matching days starting from start date
-	for len(times) < totalOccurrences {
+	for {
+		// Check if we've exceeded end date
+		if endDate != nil && current.After(*endDate) {
+			break
+		}
+
+		// If this day matches one of our target days, add it
 		if targetDays[current.Weekday()] {
 			times = append(times, current)
+
+			// Check count limit (if count is set and positive)
+			if count > 0 && len(times) >= count {
+				break
+			}
 		}
+
+		// Move to next day
 		current = current.AddDate(0, 0, 1)
 
-		// Safety limit to prevent infinite loops
-		if current.After(start.AddDate(5, 0, 0)) {
+		// Safety limit to prevent infinite loops (only if no end date)
+		if endDate == nil && current.After(start.AddDate(5, 0, 0)) {
 			break
 		}
 	}
@@ -137,16 +206,38 @@ func (s *Scheduler) calculateSpecificDaysTimes(start time.Time, totalOccurrences
 	return times
 }
 
-func (s *Scheduler) calculateMonthlyTimes(start time.Time) []time.Time {
+func (s *Scheduler) calculateMonthlyTimes(start time.Time, endDate *time.Time) []time.Time {
+	var times []time.Time
+	current := start
 	count := s.config.RepeatCount
-	if count <= 0 {
+
+	// If no end date and count <= 0, default to 1
+	if endDate == nil && count <= 0 {
 		count = 1
 	}
 
-	times := make([]time.Time, count)
-	for i := 0; i < count; i++ {
-		times[i] = start.AddDate(0, i, 0)
+	for {
+		// Check if we've exceeded end date
+		if endDate != nil && current.After(*endDate) {
+			break
+		}
+
+		times = append(times, current)
+
+		// Check count limit (if count is set and positive)
+		if count > 0 && len(times) >= count {
+			break
+		}
+
+		// Move to next month
+		current = current.AddDate(0, 1, 0)
+
+		// Safety limit to prevent infinite loops (only if no end date)
+		if endDate == nil && current.After(start.AddDate(10, 0, 0)) {
+			break
+		}
 	}
+
 	return times
 }
 

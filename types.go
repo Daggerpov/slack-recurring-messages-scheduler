@@ -106,7 +106,12 @@ type ScheduleConfig struct {
 	Interval Interval `json:"interval"`
 
 	// Number of times to repeat (0 = once/no repeat, -1 = infinite)
+	// If EndDate is also set, will stop at whichever comes first
 	RepeatCount int `json:"repeat_count"`
+
+	// End date in YYYY-MM-DD format (optional)
+	// If set, recurrence will stop on or before this date
+	EndDate string `json:"end_date,omitempty"`
 
 	// Specific days of week (for weekly interval)
 	Days []DayOfWeek `json:"days,omitempty"`

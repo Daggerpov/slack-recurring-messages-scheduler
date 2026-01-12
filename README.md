@@ -77,6 +77,7 @@ slack-scheduler [flags]
 |------|-------|---------|-------------|
 | `--interval` | `-i` | `none` | Repeat interval: `none`, `daily`, `weekly`, `monthly` |
 | `--count` | `-n` | `1` | Number of times to send |
+| `--end-date` | `-e` | | End date (YYYY-MM-DD). Recurrence stops on or before this date |
 | `--days` | | | Days of week (comma-separated: `mon,tue,wed,thu,fri,sat,sun`) |
 
 ### Examples
@@ -131,6 +132,31 @@ slack-scheduler \
   -n 12
 ```
 
+
+**Sundays until April 10th (stops at last Sunday on or before end date):**
+```bash
+slack-scheduler \
+  -m "Weekly Sunday update" \
+  -c team-updates \
+  -d 2025-01-05 \
+  -t 10:00 \
+  -i weekly \
+  --days sun \
+  -e 2025-04-10
+```
+
+**Daily messages until a specific date:**
+```bash
+slack-scheduler \
+  -m "Daily standup reminder" \
+  -c engineering \
+  -d 2025-01-13 \
+  -t 09:00 \
+  -i daily \
+  -e 2025-01-31
+```
+
+
 ## Message Formatting
 
 The message field supports full Slack formatting:
@@ -159,7 +185,7 @@ Format:
 }
 ```
 
-⚠️ **Never commit your credentials file!** It's already in `.gitignore`.
+**Never commit your credentials file!** It's already in `.gitignore`.
 
 ## License
 

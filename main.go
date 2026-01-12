@@ -16,6 +16,7 @@ var (
 	sendTime    string
 	interval    string
 	repeatCount int
+	endDate     string
 	days        string
 )
 
@@ -55,6 +56,7 @@ Messages are scheduled using your system's local timezone.`,
 	// Optional flags
 	rootCmd.Flags().StringVarP(&interval, "interval", "i", "none", "Repeat interval: none, daily, weekly, monthly")
 	rootCmd.Flags().IntVarP(&repeatCount, "count", "n", 1, "Number of times to send (for repeating schedules)")
+	rootCmd.Flags().StringVarP(&endDate, "end-date", "e", "", "End date (YYYY-MM-DD). Recurrence stops on or before this date")
 	rootCmd.Flags().StringVar(&days, "days", "", "Days of week for weekly schedule (comma-separated: mon,tue,wed,thu,fri,sat,sun)")
 
 	// Init command to create credentials template
@@ -101,6 +103,19 @@ func runSchedule(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid time format: %s (use HH:MM, 24-hour)", sendTime)
 	}
 
+	// Validate end date if provided
+	if endDate != "" {
+		if _, err := time.Parse("2006-01-02", endDate); err != nil {
+			return fmt.Errorf("invalid end date format: %s (use YYYY-MM-DD)", endDate)
+		}
+		// Check that end date is after start date
+		start, _ := time.Parse("2006-01-02", startDate)
+		end, _ := time.Parse("2006-01-02", endDate)
+		if end.Before(start) {
+			return fmt.Errorf("end date (%s) must be after start date (%s)", endDate, startDate)
+		}
+	}
+
 	// Build config
 	config := &ScheduleConfig{
 		Message:     message,
@@ -109,6 +124,7 @@ func runSchedule(cmd *cobra.Command, args []string) error {
 		SendTime:    sendTime,
 		Interval:    intervalType,
 		RepeatCount: repeatCount,
+		EndDate:     endDate,
 		Days:        parsedDays,
 	}
 
