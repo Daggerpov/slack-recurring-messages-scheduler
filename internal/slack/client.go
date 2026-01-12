@@ -1,4 +1,4 @@
-package main
+package slack
 
 import (
 	"fmt"
@@ -7,20 +7,20 @@ import (
 	"github.com/slack-go/slack"
 )
 
-// SlackClient wraps the Slack API client
-type SlackClient struct {
+// Client wraps the Slack API client
+type Client struct {
 	api *slack.Client
 }
 
-// NewSlackClient creates a new Slack client with the given token
-func NewSlackClient(token string) *SlackClient {
-	return &SlackClient{
+// NewClient creates a new Slack client with the given token
+func NewClient(token string) *Client {
+	return &Client{
 		api: slack.New(token),
 	}
 }
 
 // SendMessage sends a message to the specified channel
-func (c *SlackClient) SendMessage(channel, message string) error {
+func (c *Client) SendMessage(channel, message string) error {
 	_, _, err := c.api.PostMessage(
 		channel,
 		slack.MsgOptionText(message, false), // false = parse markdown/mentions
@@ -33,12 +33,12 @@ func (c *SlackClient) SendMessage(channel, message string) error {
 }
 
 // ScheduleMessage schedules a message to be sent at a specific time
-func (c *SlackClient) ScheduleMessage(channel, message string, postAt time.Time) (string, error) {
+func (c *Client) ScheduleMessage(channel, message string, postAt time.Time) (string, error) {
 	// Slack API expects Unix timestamp as string (UTC)
 	// Convert local time to UTC for the API call
 	postAtUTC := postAt.UTC()
 	postAtUnix := postAtUTC.Unix()
-	
+
 	respChannel, scheduledTime, err := c.api.ScheduleMessage(
 		channel,
 		fmt.Sprintf("%d", postAtUnix),
@@ -48,17 +48,17 @@ func (c *SlackClient) ScheduleMessage(channel, message string, postAt time.Time)
 	if err != nil {
 		return "", fmt.Errorf("failed to schedule message: %w", err)
 	}
-	
+
 	// Log the scheduling result
-	fmt.Printf("Scheduled message for: %s (UTC: %s) in channel: %s\n", 
-		postAt.Format("2006-01-02 15:04 MST"), 
+	fmt.Printf("Scheduled message for: %s (UTC: %s) in channel: %s\n",
+		postAt.Format("2006-01-02 15:04 MST"),
 		postAtUTC.Format("2006-01-02 15:04 UTC"),
 		respChannel)
-	
+
 	if scheduledTime != "" {
 		fmt.Printf("Scheduled message timestamp: %s\n", scheduledTime)
 	}
-	
+
 	// Return the scheduled timestamp (or postAt timestamp if empty) as identifier
 	if scheduledTime != "" {
 		return scheduledTime, nil
@@ -68,24 +68,24 @@ func (c *SlackClient) ScheduleMessage(channel, message string, postAt time.Time)
 }
 
 // ListScheduledMessages lists all scheduled messages, optionally filtered by channel
-func (c *SlackClient) ListScheduledMessages(channelID string) ([]slack.ScheduledMessage, error) {
+func (c *Client) ListScheduledMessages(channelID string) ([]slack.ScheduledMessage, error) {
 	params := &slack.GetScheduledMessagesParameters{
 		Limit: 100,
 	}
 	if channelID != "" {
 		params.Channel = channelID
 	}
-	
+
 	messages, _, err := c.api.GetScheduledMessages(params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list scheduled messages: %w", err)
 	}
-	
+
 	return messages, nil
 }
 
 // DeleteScheduledMessage deletes a scheduled message by its ID
-func (c *SlackClient) DeleteScheduledMessage(channelID, scheduledMsgID string) error {
+func (c *Client) DeleteScheduledMessage(channelID, scheduledMsgID string) error {
 	_, err := c.api.DeleteScheduledMessage(&slack.DeleteScheduledMessageParameters{
 		Channel:            channelID,
 		ScheduledMessageID: scheduledMsgID,
@@ -98,12 +98,12 @@ func (c *SlackClient) DeleteScheduledMessage(channelID, scheduledMsgID string) e
 }
 
 // ValidateCredentials checks if the token is valid by testing auth
-func (c *SlackClient) ValidateCredentials() error {
+func (c *Client) ValidateCredentials() error {
 	resp, err := c.api.AuthTest()
 	if err != nil {
 		return fmt.Errorf("invalid credentials: %w", err)
 	}
-	
+
 	// Print auth info for debugging
 	fmt.Printf("  Authenticated as: %s\n", resp.User)
 	fmt.Printf("  Team: %s\n", resp.Team)
@@ -114,12 +114,12 @@ func (c *SlackClient) ValidateCredentials() error {
 	} else {
 		fmt.Printf("  Token type: User token ✓\n")
 	}
-	
+
 	return nil
 }
 
 // GetChannelID resolves a channel name to its ID
-func (c *SlackClient) GetChannelID(channelName string) (string, error) {
+func (c *Client) GetChannelID(channelName string) (string, error) {
 	// If it already looks like an ID, return it
 	if len(channelName) > 0 && (channelName[0] == 'C' || channelName[0] == 'D' || channelName[0] == 'G') {
 		return channelName, nil
@@ -149,7 +149,7 @@ func (c *SlackClient) GetChannelID(channelName string) (string, error) {
 }
 
 // GetChannelName resolves a channel ID to its human-readable name
-func (c *SlackClient) GetChannelName(channelID string) (string, error) {
+func (c *Client) GetChannelName(channelID string) (string, error) {
 	// List channels to find the name
 	channels, _, err := c.api.GetConversations(&slack.GetConversationsParameters{
 		Types: []string{"public_channel", "private_channel"},
@@ -170,7 +170,7 @@ func (c *SlackClient) GetChannelName(channelID string) (string, error) {
 }
 
 // GetChannelNameMap returns a map of channel IDs to names
-func (c *SlackClient) GetChannelNameMap() (map[string]string, error) {
+func (c *Client) GetChannelNameMap() (map[string]string, error) {
 	channels, _, err := c.api.GetConversations(&slack.GetConversationsParameters{
 		Types: []string{"public_channel", "private_channel"},
 		Limit: 1000,
@@ -184,4 +184,9 @@ func (c *SlackClient) GetChannelNameMap() (map[string]string, error) {
 		nameMap[ch.ID] = ch.Name
 	}
 	return nameMap, nil
+}
+
+// API returns the underlying slack.Client for advanced usage
+func (c *Client) API() *slack.Client {
+	return c.api
 }

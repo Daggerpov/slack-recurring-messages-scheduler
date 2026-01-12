@@ -1,18 +1,18 @@
-package main
+package slack
 
 import (
 	"testing"
 )
 
-func TestNewSlackClient(t *testing.T) {
+func TestNewClient(t *testing.T) {
 	token := "xoxp-test-token"
-	client := NewSlackClient(token)
+	client := NewClient(token)
 
 	if client == nil {
-		t.Fatal("NewSlackClient returned nil")
+		t.Fatal("NewClient returned nil")
 	}
 	if client.api == nil {
-		t.Error("SlackClient.api should not be nil")
+		t.Error("Client.api should not be nil")
 	}
 }
 
@@ -29,7 +29,7 @@ func TestGetChannelID_AlreadyID(t *testing.T) {
 		{"DM channel ID", "D1234567890", "D1234567890"},
 	}
 
-	client := NewSlackClient("fake-token")
+	client := NewClient("fake-token")
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestGetChannelID_AlreadyID(t *testing.T) {
 // 1. A mock/fake Slack client interface
 // 2. Integration tests with a real Slack token
 //
-// For a production app, consider refactoring SlackClient to use an interface:
+// For a production app, consider refactoring Client to use an interface:
 //
 // type SlackAPI interface {
 //     AuthTest() (*slack.AuthTestResponse, error)
@@ -80,7 +80,7 @@ func TestGetChannelID_AlreadyID(t *testing.T) {
 
 // Benchmark for channel ID detection (since it's called frequently)
 func BenchmarkGetChannelID_AlreadyID(b *testing.B) {
-	client := NewSlackClient("fake-token")
+	client := NewClient("fake-token")
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {

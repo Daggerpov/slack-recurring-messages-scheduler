@@ -1,12 +1,14 @@
-package main
+package scheduler
 
 import (
 	"testing"
 	"time"
+
+	"github.com/daggerpov/slack-repeated-schedule-sender/internal/types"
 )
 
 // Helper to create a scheduler for testing (no Slack client needed for time calculations)
-func newTestScheduler(config *ScheduleConfig) *Scheduler {
+func newTestScheduler(config *types.ScheduleConfig) *Scheduler {
 	return &Scheduler{
 		client: nil,
 		config: config,
@@ -24,12 +26,12 @@ func mustParseDate(t *testing.T, dateStr string) time.Time {
 }
 
 func TestScheduler_CalculateScheduleTimes_SingleMessage(t *testing.T) {
-	config := &ScheduleConfig{
+	config := &types.ScheduleConfig{
 		Message:     "Test message",
 		Channel:     "test-channel",
 		StartDate:   "2025-01-15",
 		SendTime:    "14:00",
-		Interval:    IntervalNone,
+		Interval:    types.IntervalNone,
 		RepeatCount: 0,
 	}
 
@@ -52,17 +54,17 @@ func TestScheduler_CalculateScheduleTimes_SingleMessage(t *testing.T) {
 func TestScheduler_CalculateScheduleTimes_Daily(t *testing.T) {
 	tests := []struct {
 		name        string
-		config      *ScheduleConfig
+		config      *types.ScheduleConfig
 		wantCount   int
 		wantFirstAt string
 		wantLastAt  string
 	}{
 		{
 			name: "daily with count",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate:   "2025-01-15",
 				SendTime:    "09:00",
-				Interval:    IntervalDaily,
+				Interval:    types.IntervalDaily,
 				RepeatCount: 5,
 			},
 			wantCount:   5,
@@ -71,10 +73,10 @@ func TestScheduler_CalculateScheduleTimes_Daily(t *testing.T) {
 		},
 		{
 			name: "daily with end date",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate:   "2025-01-15",
 				SendTime:    "09:00",
-				Interval:    IntervalDaily,
+				Interval:    types.IntervalDaily,
 				RepeatCount: 0,
 				EndDate:     "2025-01-17",
 			},
@@ -84,10 +86,10 @@ func TestScheduler_CalculateScheduleTimes_Daily(t *testing.T) {
 		},
 		{
 			name: "daily with count and end date (count reached first)",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate:   "2025-01-15",
 				SendTime:    "09:00",
-				Interval:    IntervalDaily,
+				Interval:    types.IntervalDaily,
 				RepeatCount: 2,
 				EndDate:     "2025-01-20",
 			},
@@ -97,10 +99,10 @@ func TestScheduler_CalculateScheduleTimes_Daily(t *testing.T) {
 		},
 		{
 			name: "daily no count no end date defaults to 1",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate:   "2025-01-15",
 				SendTime:    "09:00",
-				Interval:    IntervalDaily,
+				Interval:    types.IntervalDaily,
 				RepeatCount: 0,
 			},
 			wantCount:   1,
@@ -139,17 +141,17 @@ func TestScheduler_CalculateScheduleTimes_Daily(t *testing.T) {
 func TestScheduler_CalculateScheduleTimes_Weekly(t *testing.T) {
 	tests := []struct {
 		name        string
-		config      *ScheduleConfig
+		config      *types.ScheduleConfig
 		wantCount   int
 		wantFirstAt string
 		wantLastAt  string
 	}{
 		{
 			name: "weekly same day with count",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate:   "2025-01-15", // Wednesday
 				SendTime:    "10:00",
-				Interval:    IntervalWeekly,
+				Interval:    types.IntervalWeekly,
 				RepeatCount: 4,
 			},
 			wantCount:   4,
@@ -158,10 +160,10 @@ func TestScheduler_CalculateScheduleTimes_Weekly(t *testing.T) {
 		},
 		{
 			name: "weekly with end date",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate: "2025-01-15", // Wednesday
 				SendTime:  "10:00",
-				Interval:  IntervalWeekly,
+				Interval:  types.IntervalWeekly,
 				EndDate:   "2025-02-01",
 			},
 			wantCount:   3, // Jan 15, 22, 29
@@ -199,55 +201,55 @@ func TestScheduler_CalculateScheduleTimes_Weekly(t *testing.T) {
 
 func TestScheduler_CalculateScheduleTimes_WeeklySpecificDays(t *testing.T) {
 	tests := []struct {
-		name        string
-		config      *ScheduleConfig
-		wantCount   int
-		wantDays    []string // expected dates
+		name      string
+		config    *types.ScheduleConfig
+		wantCount int
+		wantDays  []string // expected dates
 	}{
 		{
 			name: "mon wed fri with count",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate:   "2025-01-13", // Monday
 				SendTime:    "09:00",
-				Interval:    IntervalWeekly,
+				Interval:    types.IntervalWeekly,
 				RepeatCount: 6,
-				Days:        []DayOfWeek{Monday, Wednesday, Friday},
+				Days:        []types.DayOfWeek{types.Monday, types.Wednesday, types.Friday},
 			},
 			wantCount: 6,
 			wantDays:  []string{"2025-01-13", "2025-01-15", "2025-01-17", "2025-01-20", "2025-01-22", "2025-01-24"},
 		},
 		{
 			name: "tue thu with end date",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate: "2025-01-14", // Tuesday
 				SendTime:  "09:00",
-				Interval:  IntervalWeekly,
+				Interval:  types.IntervalWeekly,
 				EndDate:   "2025-01-23",
-				Days:      []DayOfWeek{Tuesday, Thursday},
+				Days:      []types.DayOfWeek{types.Tuesday, types.Thursday},
 			},
 			wantCount: 4, // Jan 14, 16, 21, 23
 			wantDays:  []string{"2025-01-14", "2025-01-16", "2025-01-21", "2025-01-23"},
 		},
 		{
 			name: "single day weekly",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate:   "2025-01-17", // Friday
 				SendTime:    "09:00",
-				Interval:    IntervalWeekly,
+				Interval:    types.IntervalWeekly,
 				RepeatCount: 3,
-				Days:        []DayOfWeek{Friday},
+				Days:        []types.DayOfWeek{types.Friday},
 			},
 			wantCount: 3,
 			wantDays:  []string{"2025-01-17", "2025-01-24", "2025-01-31"},
 		},
 		{
 			name: "start date not on specified day - finds next matching day",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate:   "2025-01-13", // Monday
 				SendTime:    "09:00",
-				Interval:    IntervalWeekly,
+				Interval:    types.IntervalWeekly,
 				RepeatCount: 3,
-				Days:        []DayOfWeek{Friday}, // Only Fridays
+				Days:        []types.DayOfWeek{types.Friday}, // Only Fridays
 			},
 			wantCount: 3,
 			wantDays:  []string{"2025-01-17", "2025-01-24", "2025-01-31"}, // First Friday is Jan 17
@@ -284,17 +286,17 @@ func TestScheduler_CalculateScheduleTimes_WeeklySpecificDays(t *testing.T) {
 func TestScheduler_CalculateScheduleTimes_Monthly(t *testing.T) {
 	tests := []struct {
 		name        string
-		config      *ScheduleConfig
+		config      *types.ScheduleConfig
 		wantCount   int
 		wantFirstAt string
 		wantLastAt  string
 	}{
 		{
 			name: "monthly with count",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate:   "2025-01-15",
 				SendTime:    "10:00",
-				Interval:    IntervalMonthly,
+				Interval:    types.IntervalMonthly,
 				RepeatCount: 3,
 			},
 			wantCount:   3,
@@ -303,10 +305,10 @@ func TestScheduler_CalculateScheduleTimes_Monthly(t *testing.T) {
 		},
 		{
 			name: "monthly with end date",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate: "2025-01-15",
 				SendTime:  "10:00",
-				Interval:  IntervalMonthly,
+				Interval:  types.IntervalMonthly,
 				EndDate:   "2025-04-01",
 			},
 			wantCount:   3, // Jan 15, Feb 15, Mar 15
@@ -315,10 +317,10 @@ func TestScheduler_CalculateScheduleTimes_Monthly(t *testing.T) {
 		},
 		{
 			name: "monthly on 31st (handles short months)",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate:   "2025-01-31",
 				SendTime:    "10:00",
-				Interval:    IntervalMonthly,
+				Interval:    types.IntervalMonthly,
 				RepeatCount: 3,
 			},
 			wantCount:   3,
@@ -373,10 +375,10 @@ func TestScheduler_CalculateScheduleTimes_TimeOfDay(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := &ScheduleConfig{
+			config := &types.ScheduleConfig{
 				StartDate: "2025-01-15",
 				SendTime:  tt.sendTime,
-				Interval:  IntervalNone,
+				Interval:  types.IntervalNone,
 			}
 
 			scheduler := newTestScheduler(config)
@@ -402,33 +404,33 @@ func TestScheduler_CalculateScheduleTimes_TimeOfDay(t *testing.T) {
 func TestScheduler_CalculateScheduleTimes_InvalidInputs(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  *ScheduleConfig
+		config  *types.ScheduleConfig
 		wantErr bool
 	}{
 		{
 			name: "invalid date format",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate: "01-15-2025", // wrong format
 				SendTime:  "09:00",
-				Interval:  IntervalNone,
+				Interval:  types.IntervalNone,
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid time format",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate: "2025-01-15",
 				SendTime:  "9:00 AM", // wrong format
-				Interval:  IntervalNone,
+				Interval:  types.IntervalNone,
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid end date format",
-			config: &ScheduleConfig{
+			config: &types.ScheduleConfig{
 				StartDate: "2025-01-15",
 				SendTime:  "09:00",
-				Interval:  IntervalDaily,
+				Interval:  types.IntervalDaily,
 				EndDate:   "invalid-date",
 			},
 			wantErr: true,

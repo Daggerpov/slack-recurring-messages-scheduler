@@ -1,25 +1,28 @@
-package main
+package scheduler
 
 import (
 	"fmt"
 	"time"
+
+	"github.com/daggerpov/slack-repeated-schedule-sender/internal/slack"
+	"github.com/daggerpov/slack-repeated-schedule-sender/internal/types"
 )
 
-// localTZ is the user's local timezone
-var localTZ *time.Location
+// LocalTZ is the user's local timezone
+var LocalTZ *time.Location
 
 func init() {
-	localTZ = time.Local
+	LocalTZ = time.Local
 }
 
 // Scheduler handles message scheduling logic
 type Scheduler struct {
-	client *SlackClient
-	config *ScheduleConfig
+	client *slack.Client
+	config *types.ScheduleConfig
 }
 
-// NewScheduler creates a new scheduler
-func NewScheduler(client *SlackClient, config *ScheduleConfig) *Scheduler {
+// New creates a new scheduler
+func New(client *slack.Client, config *types.ScheduleConfig) *Scheduler {
 	return &Scheduler{
 		client: client,
 		config: config,
@@ -37,29 +40,29 @@ func (s *Scheduler) CalculateScheduleTimes() ([]time.Time, error) {
 	// Parse end date if provided (set to end of day)
 	var endDateTime *time.Time
 	if s.config.EndDate != "" {
-		end, err := time.ParseInLocation("2006-01-02", s.config.EndDate, localTZ)
+		end, err := time.ParseInLocation("2006-01-02", s.config.EndDate, LocalTZ)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse end date: %w", err)
 		}
 		// Set to end of day (23:59:59)
-		endOfDay := time.Date(end.Year(), end.Month(), end.Day(), 23, 59, 59, 0, localTZ)
+		endOfDay := time.Date(end.Year(), end.Month(), end.Day(), 23, 59, 59, 0, LocalTZ)
 		endDateTime = &endOfDay
 	}
 
 	var times []time.Time
 
 	switch s.config.Interval {
-	case IntervalNone:
+	case types.IntervalNone:
 		// Single message
 		times = append(times, startDateTime)
 
-	case IntervalDaily:
+	case types.IntervalDaily:
 		times = s.calculateDailyTimes(startDateTime, endDateTime)
 
-	case IntervalWeekly:
+	case types.IntervalWeekly:
 		times = s.calculateWeeklyTimes(startDateTime, endDateTime)
 
-	case IntervalMonthly:
+	case types.IntervalMonthly:
 		times = s.calculateMonthlyTimes(startDateTime, endDateTime)
 
 	default:
@@ -71,7 +74,7 @@ func (s *Scheduler) CalculateScheduleTimes() ([]time.Time, error) {
 
 func (s *Scheduler) parseDateTime(date, timeStr string) (time.Time, error) {
 	dateTimeStr := fmt.Sprintf("%s %s", date, timeStr)
-	t, err := time.ParseInLocation("2006-01-02 15:04", dateTimeStr, localTZ)
+	t, err := time.ParseInLocation("2006-01-02 15:04", dateTimeStr, LocalTZ)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to parse date/time: %w", err)
 	}
@@ -166,14 +169,14 @@ func (s *Scheduler) calculateSpecificDaysTimes(start time.Time, endDate *time.Ti
 	}
 
 	// Map DayOfWeek to time.Weekday
-	dayMap := map[DayOfWeek]time.Weekday{
-		Monday:    time.Monday,
-		Tuesday:   time.Tuesday,
-		Wednesday: time.Wednesday,
-		Thursday:  time.Thursday,
-		Friday:    time.Friday,
-		Saturday:  time.Saturday,
-		Sunday:    time.Sunday,
+	dayMap := map[types.DayOfWeek]time.Weekday{
+		types.Monday:    time.Monday,
+		types.Tuesday:   time.Tuesday,
+		types.Wednesday: time.Wednesday,
+		types.Thursday:  time.Thursday,
+		types.Friday:    time.Friday,
+		types.Saturday:  time.Saturday,
+		types.Sunday:    time.Sunday,
 	}
 
 	// Create a set of target weekdays
@@ -260,7 +263,7 @@ func (s *Scheduler) Schedule() ([]string, error) {
 	}
 
 	var scheduledIDs []string
-	now := time.Now().In(localTZ)
+	now := time.Now().In(LocalTZ)
 
 	for _, t := range times {
 		// Skip times in the past
@@ -293,7 +296,7 @@ func (s *Scheduler) Schedule() ([]string, error) {
 		fmt.Printf("Found %d scheduled message(s) in channel %s:\n", len(scheduledMessages), channelID)
 		for _, msg := range scheduledMessages {
 			postAt := time.Unix(int64(msg.PostAt), 0)
-			fmt.Printf("  - ID: %s, Scheduled for: %s, Text: %.50s...\n", 
+			fmt.Printf("  - ID: %s, Scheduled for: %s, Text: %.50s...\n",
 				msg.ID, postAt.Format("2006-01-02 15:04 MST"), msg.Text)
 		}
 		if len(scheduledMessages) == 0 {

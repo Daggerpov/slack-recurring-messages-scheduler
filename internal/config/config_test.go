@@ -1,18 +1,20 @@
-package main
+package config
 
 import (
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/daggerpov/slack-repeated-schedule-sender/internal/types"
 )
 
 func TestLoadCredentials_ValidFile(t *testing.T) {
 	// Create temp directory and credentials file
 	tmpDir := t.TempDir()
-	credsPath := filepath.Join(tmpDir, credentialsFileName)
+	credsPath := filepath.Join(tmpDir, CredentialsFileName)
 
-	creds := Credentials{Token: "xoxp-test-token-12345"}
+	creds := types.Credentials{Token: "xoxp-test-token-12345"}
 	data, err := json.Marshal(creds)
 	if err != nil {
 		t.Fatalf("failed to marshal test credentials: %v", err)
@@ -59,10 +61,10 @@ func TestLoadCredentials_MissingFile(t *testing.T) {
 
 func TestLoadCredentials_EmptyToken(t *testing.T) {
 	tmpDir := t.TempDir()
-	credsPath := filepath.Join(tmpDir, credentialsFileName)
+	credsPath := filepath.Join(tmpDir, CredentialsFileName)
 
 	// Write credentials with empty token
-	creds := Credentials{Token: ""}
+	creds := types.Credentials{Token: ""}
 	data, _ := json.Marshal(creds)
 	os.WriteFile(credsPath, data, 0600)
 
@@ -78,7 +80,7 @@ func TestLoadCredentials_EmptyToken(t *testing.T) {
 
 func TestLoadCredentials_InvalidJSON(t *testing.T) {
 	tmpDir := t.TempDir()
-	credsPath := filepath.Join(tmpDir, credentialsFileName)
+	credsPath := filepath.Join(tmpDir, CredentialsFileName)
 
 	// Write invalid JSON
 	os.WriteFile(credsPath, []byte("not valid json{"), 0600)
@@ -106,13 +108,13 @@ func TestCreateTemplateCredentials_Success(t *testing.T) {
 	}
 
 	// Verify file was created
-	credsPath := filepath.Join(tmpDir, credentialsFileName)
+	credsPath := filepath.Join(tmpDir, CredentialsFileName)
 	data, err := os.ReadFile(credsPath)
 	if err != nil {
 		t.Fatalf("failed to read created credentials file: %v", err)
 	}
 
-	var creds Credentials
+	var creds types.Credentials
 	if err := json.Unmarshal(data, &creds); err != nil {
 		t.Fatalf("failed to parse created credentials file: %v", err)
 	}
@@ -135,7 +137,7 @@ func TestCreateTemplateCredentials_Success(t *testing.T) {
 
 func TestCreateTemplateCredentials_FileExists(t *testing.T) {
 	tmpDir := t.TempDir()
-	credsPath := filepath.Join(tmpDir, credentialsFileName)
+	credsPath := filepath.Join(tmpDir, CredentialsFileName)
 
 	// Create existing file
 	os.WriteFile(credsPath, []byte(`{"token":"existing"}`), 0600)
@@ -151,7 +153,7 @@ func TestCreateTemplateCredentials_FileExists(t *testing.T) {
 
 	// Verify existing file was not overwritten
 	data, _ := os.ReadFile(credsPath)
-	var creds Credentials
+	var creds types.Credentials
 	json.Unmarshal(data, &creds)
 	if creds.Token != "existing" {
 		t.Error("existing credentials file was overwritten")
@@ -173,12 +175,12 @@ func TestLoadCredentialsFromFile_ValidTokenFormats(t *testing.T) {
 			tmpDir := t.TempDir()
 			credsPath := filepath.Join(tmpDir, "test-creds.json")
 
-			data, _ := json.Marshal(Credentials{Token: tt.token})
+			data, _ := json.Marshal(types.Credentials{Token: tt.token})
 			os.WriteFile(credsPath, data, 0600)
 
-			creds, err := loadCredentialsFromFile(credsPath)
+			creds, err := LoadCredentialsFromFile(credsPath)
 			if err != nil {
-				t.Fatalf("loadCredentialsFromFile() error = %v", err)
+				t.Fatalf("LoadCredentialsFromFile() error = %v", err)
 			}
 
 			if creds.Token != tt.token {

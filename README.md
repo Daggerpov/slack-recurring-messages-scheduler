@@ -18,10 +18,31 @@ git clone https://github.com/daggerpov/slack-repeated-schedule-sender.git
 cd slack-repeated-schedule-sender
 
 # Build
-go build -o slack-scheduler
+make build
 
 # Or install globally
-go install
+make install
+```
+
+## Project Structure
+
+This project follows the [Go standard project layout](https://github.com/golang-standards/project-layout):
+
+```
+.
+├── cmd/
+│   └── slack-scheduler/    # Main application entry point
+│       ├── main.go
+│       └── main_test.go
+├── internal/               # Private application code
+│   ├── config/             # Configuration & credentials handling
+│   ├── scheduler/          # Scheduling logic
+│   ├── slack/              # Slack API client wrapper
+│   └── types/              # Shared type definitions
+├── go.mod
+├── go.sum
+├── Makefile
+└── README.md
 ```
 
 ## Setup

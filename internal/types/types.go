@@ -1,4 +1,4 @@
-package main
+package types
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ const (
 	IntervalMonthly Interval = "monthly"
 )
 
-// Valid intervals for validation
+// ValidIntervals for validation
 var ValidIntervals = []Interval{IntervalNone, IntervalDaily, IntervalWeekly, IntervalMonthly}
 
 func (i Interval) IsValid() bool {

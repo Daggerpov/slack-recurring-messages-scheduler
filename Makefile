@@ -1,8 +1,15 @@
-.PHONY: build test test-verbose test-cover clean lint
+.PHONY: build test test-verbose test-cover clean lint install
+
+# Binary name
+BINARY_NAME=slack-scheduler
 
 # Build the application
 build:
-	go build -o slack-scheduler .
+	go build -o $(BINARY_NAME) ./cmd/slack-scheduler
+
+# Install globally
+install:
+	go install ./cmd/slack-scheduler
 
 # Run all tests
 test:
@@ -28,7 +35,7 @@ bench:
 
 # Clean build artifacts
 clean:
-	rm -f slack-scheduler coverage.out coverage.html
+	rm -f $(BINARY_NAME) coverage.out coverage.html
 
 # Run go vet
 vet:
