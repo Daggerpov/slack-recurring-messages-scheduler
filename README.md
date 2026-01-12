@@ -1,20 +1,24 @@
 # Slack Recurring Messages Scheduler
 
-A simple Go CLI tool to schedule Slack messages with support for recurring schedules.
+A Go CLI tool to schedule Slack messages with support for recurring schedules.
 
 ## Demo
 
-# Slack Repeated Schedule Sender
+<h1 align="center">
+  Full Video on YouTube: <a href="https://youtu.be/ZcLI_l6oBdw">https://youtu.be/ZcLI_l6oBdw
+</a>
+</h1>
 
-A simple Go CLI tool to schedule Slack messages with support for recurring schedules.
+<p align="center">
+  <a href="https://youtu.be/ZcLI_l6oBdw">
+    <img src="https://github.com/user-attachments/assets/1efa68db-4cb1-4b65-893a-64c572edf062" alt="Slack Repeated Schedule Sender Demo" width="1000" height="auto">
+  </a>
+</p>
 
-## Demo
-
-On YouTube: [![Slack Schedule Recurring Messages Tool Demo](https://github.com/user-attachments/assets/8bc18286-733f-4fae-b77b-0e11197987df)](https://youtu.be/ZcLI_l6oBdw)
-
-[![Slack Repeated Schedule Sender Demo](![output](https://github.com/user-attachments/assets/60f506ed-ab28-4566-b87c-880570eb5a83)
-)](https://youtu.be/ZcLI_l6oBdw)
-
+<p align="center">
+   Sorry for the lack of color in this clip. I used <a href="https://en.wikipedia.org/wiki/FFmpeg">ffmpeg</a> to compress this clip into a gif and had to choose between fps, resolution, and color 
+   <br>-> I chose resolution for legibility.
+</p>
 
 
 ## Features
@@ -261,9 +265,3 @@ Format:
   "token": "xoxp-your-user-oauth-token"
 }
 ```
-
-**Never commit your credentials file!** It's already in `.gitignore`.
-
-## License
-
-MIT
