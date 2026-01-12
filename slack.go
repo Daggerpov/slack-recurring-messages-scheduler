@@ -86,10 +86,22 @@ func (c *SlackClient) ListScheduledMessages(channelID string) ([]slack.Scheduled
 
 // ValidateCredentials checks if the token is valid by testing auth
 func (c *SlackClient) ValidateCredentials() error {
-	_, err := c.api.AuthTest()
+	resp, err := c.api.AuthTest()
 	if err != nil {
 		return fmt.Errorf("invalid credentials: %w", err)
 	}
+	
+	// Print auth info for debugging
+	fmt.Printf("  Authenticated as: %s\n", resp.User)
+	fmt.Printf("  Team: %s\n", resp.Team)
+	if resp.BotID != "" {
+		fmt.Printf("  ⚠️  WARNING: This is a BOT token (Bot ID: %s)\n", resp.BotID)
+		fmt.Printf("     Scheduled messages from bot tokens WON'T appear in your Slack UI!\n")
+		fmt.Printf("     Use a User OAuth Token (xoxp-...) instead of a Bot Token (xoxb-...)\n")
+	} else {
+		fmt.Printf("  Token type: User token ✓\n")
+	}
+	
 	return nil
 }
 
