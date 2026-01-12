@@ -89,6 +89,7 @@ func (c *SlackClient) DeleteScheduledMessage(channelID, scheduledMsgID string) e
 	_, err := c.api.DeleteScheduledMessage(&slack.DeleteScheduledMessageParameters{
 		Channel:            channelID,
 		ScheduledMessageID: scheduledMsgID,
+		AsUser:             true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to delete scheduled message: %w", err)
