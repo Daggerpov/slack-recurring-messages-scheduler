@@ -36,18 +36,18 @@ A CLI tool to schedule Slack messages with support for:
 Messages are scheduled using your system's local timezone.
 
 Usage:
-  slack-scheduler [flags]
-  slack-scheduler [command]
+  ./slack-scheduler [flags]
+  ./slack-scheduler [command]
 
 Examples:
   # Send a one-time message
-  slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
+  ./slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
 
   # Send every Friday at 2pm for 4 weeks
-  slack-scheduler -m "Weekly reminder!" -c general -d 2025-01-17 -t 14:00 -i weekly -n 4
+  ./slack-scheduler -m "Weekly reminder!" -c general -d 2025-01-17 -t 14:00 -i weekly -n 4
 
   # Send on Monday and Friday at 9am for 8 occurrences
-  slack-scheduler -m "Standup time!" -c engineering -d 2025-01-13 -t 09:00 -i weekly -n 8 --days mon,fri
+  ./slack-scheduler -m "Standup time!" -c engineering -d 2025-01-13 -t 09:00 -i weekly -n 8 --days mon,fri
 
 Available Commands:
   completion  Generate the autocompletion script for the specified shell
@@ -64,7 +64,7 @@ Flags:
   -m, --message string    Message to send (supports @mentions, emoji, Slack formatting)
   -t, --time string       Time to send (HH:MM, 24-hour format, local time)
 
-Use "slack-scheduler [command] --help" for more information about a command.
+Use "./slack-scheduler [command] --help" for more information about a command.
 
 
 ```
@@ -147,7 +147,7 @@ chmod 600 .slack-scheduler-credentials.json
 ## Usage
 
 ```bash
-slack-scheduler [flags]
+./slack-scheduler [flags]
 ```
 
 ### Required Flags
@@ -172,12 +172,12 @@ slack-scheduler [flags]
 
 **One-time message:**
 ```bash
-slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
+./slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
 ```
 
 **Every Friday at 2pm for 4 weeks:**
 ```bash
-slack-scheduler \
+./slack-scheduler \
   -m "Weekly reminder: Please submit your timesheets!" \
   -c general \
   -d 2025-01-17 \
@@ -188,7 +188,7 @@ slack-scheduler \
 
 **Monday and Friday at 9am for 8 occurrences:**
 ```bash
-slack-scheduler \
+./slack-scheduler \
   -m "Standup time! :coffee:" \
   -c engineering \
   -d 2025-01-13 \
@@ -200,7 +200,7 @@ slack-scheduler \
 
 **Daily reminder for 5 days:**
 ```bash
-slack-scheduler \
+./slack-scheduler \
   -m "@channel Don't forget to check your PRs" \
   -c dev-team \
   -d 2025-01-13 \
@@ -211,7 +211,7 @@ slack-scheduler \
 
 **Monthly report reminder:**
 ```bash
-slack-scheduler \
+./slack-scheduler \
   -m "Monthly metrics report due this week" \
   -c analytics \
   -d 2025-01-01 \
@@ -223,7 +223,7 @@ slack-scheduler \
 
 **Sundays until April 10th (stops at last Sunday on or before end date):**
 ```bash
-slack-scheduler \
+./slack-scheduler \
   -m "Weekly Sunday update" \
   -c team-updates \
   -d 2025-01-05 \
@@ -235,7 +235,7 @@ slack-scheduler \
 
 **Daily messages until a specific date:**
 ```bash
-slack-scheduler \
+./slack-scheduler \
   -m "Daily standup reminder" \
   -c engineering \
   -d 2025-01-13 \
@@ -263,10 +263,10 @@ View all messages you've scheduled via the API:
 
 ```bash
 # List all scheduled messages
-slack-scheduler list
+./slack-scheduler list
 
 # List scheduled messages for a specific channel
-slack-scheduler list -c general
+./slack-scheduler list -c general
 ```
 
 ### Delete Scheduled Messages
@@ -275,10 +275,10 @@ Cancel scheduled messages:
 
 ```bash
 # Delete a specific scheduled message by ID
-slack-scheduler delete -c general --id Q0A7Z0QMWAF
+./slack-scheduler delete -c general --id Q0A7Z0QMWAF
 
 # Delete ALL scheduled messages in a channel
-slack-scheduler delete -c general --all
+./slack-scheduler delete -c general --all
 ```
 
 ## Important: Slack UI Limitation ⚠️ **Messages scheduled via the Slack API do NOT appear in Slack's "Scheduled Messages" UI.**
@@ -293,8 +293,8 @@ This is a Slack platform limitation, not a bug. Here's what this means:
 **Your messages ARE scheduled and WILL be sent** — you just can't see them in Slack's desktop/mobile app.
 
 To view and manage API-scheduled messages, use:
-- `slack-scheduler list` — see all scheduled messages
-- `slack-scheduler delete` — cancel scheduled messages
+- `./slack-scheduler list` — see all scheduled messages
+- `./slack-scheduler delete` — cancel scheduled messages
 
 ## Limitations
 
