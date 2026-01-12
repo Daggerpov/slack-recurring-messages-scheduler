@@ -1,4 +1,4 @@
-# Slack Repeated Schedule Sender
+# Slack Recurring Messages Scheduler
 
 A simple Go CLI tool to schedule Slack messages with support for recurring schedules.
 
@@ -14,8 +14,8 @@ A simple Go CLI tool to schedule Slack messages with support for recurring sched
 
 ```bash
 # Clone the repo
-git clone https://github.com/daggerpov/slack-repeated-schedule-sender.git
-cd slack-repeated-schedule-sender
+git clone https://github.com/daggerpov/slack-recurring-messages-scheduler.git
+cd slack-recurring-messages-scheduler
 
 # Build
 make build

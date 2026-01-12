@@ -1,4 +1,4 @@
-module github.com/daggerpov/slack-repeated-schedule-sender
+module github.com/daggerpov/slack-recurring-messages-scheduler
 
 go 1.20
 

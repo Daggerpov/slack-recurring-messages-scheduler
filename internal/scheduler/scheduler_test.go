@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daggerpov/slack-repeated-schedule-sender/internal/types"
+	"github.com/daggerpov/slack-recurring-messages-scheduler/internal/types"
 )
 
 // Helper to create a scheduler for testing (no Slack client needed for time calculations)

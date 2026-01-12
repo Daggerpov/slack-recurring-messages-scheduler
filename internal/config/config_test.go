@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/daggerpov/slack-repeated-schedule-sender/internal/types"
+	"github.com/daggerpov/slack-recurring-messages-scheduler/internal/types"
 )
 
 func TestLoadCredentials_ValidFile(t *testing.T) {

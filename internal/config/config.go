@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/daggerpov/slack-repeated-schedule-sender/internal/types"
+	"github.com/daggerpov/slack-recurring-messages-scheduler/internal/types"
 )
 
 const (

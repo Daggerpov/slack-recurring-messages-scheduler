@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/daggerpov/slack-repeated-schedule-sender/internal/slack"
-	"github.com/daggerpov/slack-repeated-schedule-sender/internal/types"
+	"github.com/daggerpov/slack-recurring-messages-scheduler/internal/slack"
+	"github.com/daggerpov/slack-recurring-messages-scheduler/internal/types"
 )
 
 // LocalTZ is the user's local timezone
