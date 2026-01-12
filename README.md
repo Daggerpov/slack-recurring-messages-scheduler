@@ -20,8 +20,10 @@ A Go CLI tool to schedule Slack messages with support for recurring schedules.
    <br>-> I chose resolution for legibility.
 </p>
 
+<img width="1180" height="64" alt="image" src="https://github.com/user-attachments/assets/5c38ab65-e689-4d3e-943f-1adf2a341275" />
 
-<img width="1511" height="31" alt="image" src="https://github.com/user-attachments/assets/06ef0d3a-53be-4aba-a364-d3a674ba7c6b" />
+<br>
+</br>
 
 `./slack-scheduler help` output:
 
@@ -36,36 +38,38 @@ A CLI tool to schedule Slack messages with support for:
 Messages are scheduled using your system's local timezone.
 
 Usage:
-  ./slack-scheduler [flags]
-  ./slack-scheduler [command]
+  slack-scheduler [flags]
+  slack-scheduler [command]
 
 Examples:
   # Send a one-time message
-  ./slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
+  slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
 
   # Send every Friday at 2pm for 4 weeks
-  ./slack-scheduler -m "Weekly reminder!" -c general -d 2025-01-17 -t 14:00 -i weekly -n 4
+  slack-scheduler -m "Weekly reminder!" -c general -d 2025-01-17 -t 14:00 -i weekly -n 4
 
   # Send on Monday and Friday at 9am for 8 occurrences
-  ./slack-scheduler -m "Standup time!" -c engineering -d 2025-01-13 -t 09:00 -i weekly -n 8 --days mon,fri
+  slack-scheduler -m "Standup time!" -c engineering -d 2025-01-13 -t 09:00 -i weekly -n 8 --days mon,fri
 
 Available Commands:
   completion  Generate the autocompletion script for the specified shell
+  delete      Delete scheduled messages
   help        Help about any command
   init        Create a credentials template file
+  list        List all scheduled messages
 
 Flags:
   -c, --channel string    Channel name or ID to send to
-  -n, --count int         Number of times to send (for repeating schedules) (default 1)
+  -n, --count int         Number of times to send (0 = use end date or default to 1)
   -d, --date string       Start date (YYYY-MM-DD)
       --days string       Days of week for weekly schedule (comma-separated: mon,tue,wed,thu,fri,sat,sun)
+  -e, --end-date string   End date (YYYY-MM-DD). Schedules messages until this date
   -h, --help              help for slack-scheduler
   -i, --interval string   Repeat interval: none, daily, weekly, monthly (default "none")
   -m, --message string    Message to send (supports @mentions, emoji, Slack formatting)
   -t, --time string       Time to send (HH:MM, 24-hour format, local time)
 
-Use "./slack-scheduler [command] --help" for more information about a command.
-
+Use "slack-scheduler [command] --help" for more information about a command.
 
 ```
 
