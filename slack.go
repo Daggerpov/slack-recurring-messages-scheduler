@@ -84,6 +84,18 @@ func (c *SlackClient) ListScheduledMessages(channelID string) ([]slack.Scheduled
 	return messages, nil
 }
 
+// DeleteScheduledMessage deletes a scheduled message by its ID
+func (c *SlackClient) DeleteScheduledMessage(channelID, scheduledMsgID string) error {
+	_, err := c.api.DeleteScheduledMessage(&slack.DeleteScheduledMessageParameters{
+		Channel:            channelID,
+		ScheduledMessageID: scheduledMsgID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete scheduled message: %w", err)
+	}
+	return nil
+}
+
 // ValidateCredentials checks if the token is valid by testing auth
 func (c *SlackClient) ValidateCredentials() error {
 	resp, err := c.api.AuthTest()

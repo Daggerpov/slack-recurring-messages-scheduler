@@ -167,11 +167,54 @@ The message field supports full Slack formatting:
 - **Links:** `<https://example.com|Click here>`
 - **Code:** `` `code` ``, ` ```code block``` `
 
+## Managing Scheduled Messages
+
+### List Scheduled Messages
+
+View all messages you've scheduled via the API:
+
+```bash
+# List all scheduled messages
+slack-scheduler list
+
+# List scheduled messages for a specific channel
+slack-scheduler list -c general
+```
+
+### Delete Scheduled Messages
+
+Cancel scheduled messages:
+
+```bash
+# Delete a specific scheduled message by ID
+slack-scheduler delete -c general --id Q0A7Z0QMWAF
+
+# Delete ALL scheduled messages in a channel
+slack-scheduler delete -c general --all
+```
+
+## Important: Slack UI Limitation
+
+⚠️ **Messages scheduled via the Slack API do NOT appear in Slack's "Scheduled Messages" UI.**
+
+This is a Slack platform limitation, not a bug. Here's what this means:
+
+| Scheduled via | Visible in Slack UI | Actually sends |
+|--------------|---------------------|----------------|
+| Slack app (typing /schedule or clicking schedule) | ✅ Yes | ✅ Yes |
+| This CLI tool (API) | ❌ No | ✅ Yes |
+
+**Your messages ARE scheduled and WILL be sent** — you just can't see them in Slack's desktop/mobile app.
+
+To view and manage API-scheduled messages, use:
+- `slack-scheduler list` — see all scheduled messages
+- `slack-scheduler delete` — cancel scheduled messages
+
 ## Limitations
 
 - Slack only allows scheduling messages up to **120 days** in advance
 - Past times are automatically skipped
-- The tool schedules messages via Slack's API, so they appear as scheduled messages in Slack
+- API-scheduled messages don't appear in Slack's UI (see above), but they will still be sent on schedule
 
 ## Credentials File
 

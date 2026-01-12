@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	// CLI flags
+	// CLI flags for schedule command
 	message     string
 	channel     string
 	startDate   string
@@ -18,6 +18,14 @@ var (
 	repeatCount int
 	endDate     string
 	days        string
+
+	// CLI flags for list command
+	listChannel string
+
+	// CLI flags for delete command
+	deleteChannel string
+	deleteID      string
+	deleteAll     bool
 )
 
 func main() {
@@ -69,6 +77,45 @@ Messages are scheduled using your system's local timezone.`,
 		},
 	}
 	rootCmd.AddCommand(initCmd)
+
+	// List command to show scheduled messages
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all scheduled messages",
+		Long: `List all messages scheduled via the Slack API.
+
+Note: Messages scheduled via the API don't appear in Slack's UI "Scheduled Messages" view.
+Use this command to see and manage API-scheduled messages.`,
+		Example: `  # List all scheduled messages
+  slack-scheduler list
+
+  # List scheduled messages for a specific channel
+  slack-scheduler list -c general`,
+		RunE: runList,
+	}
+	listCmd.Flags().StringVarP(&listChannel, "channel", "c", "", "Filter by channel name or ID (optional)")
+	rootCmd.AddCommand(listCmd)
+
+	// Delete command to cancel scheduled messages
+	deleteCmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete scheduled messages",
+		Long: `Delete (cancel) scheduled messages by ID.
+
+Use 'slack-scheduler list' to find message IDs.
+You can delete a single message by ID, or all messages in a channel with --all.`,
+		Example: `  # Delete a specific scheduled message
+  slack-scheduler delete -c general --id Q0A7Z0QMWAF
+
+  # Delete all scheduled messages in a channel
+  slack-scheduler delete -c general --all`,
+		RunE: runDelete,
+	}
+	deleteCmd.Flags().StringVarP(&deleteChannel, "channel", "c", "", "Channel name or ID (required)")
+	deleteCmd.Flags().StringVar(&deleteID, "id", "", "Scheduled message ID to delete")
+	deleteCmd.Flags().BoolVar(&deleteAll, "all", false, "Delete all scheduled messages in the channel")
+	deleteCmd.MarkFlagRequired("channel")
+	rootCmd.AddCommand(deleteCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -165,5 +212,120 @@ func runSchedule(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\n✓ Successfully scheduled %d message(s)\n", len(scheduledIDs))
+	return nil
+}
+
+func runList(cmd *cobra.Command, args []string) error {
+	// Load credentials
+	creds, err := LoadCredentials()
+	if err != nil {
+		return err
+	}
+
+	// Create Slack client and validate
+	client := NewSlackClient(creds.Token)
+	if err := client.ValidateCredentials(); err != nil {
+		return err
+	}
+	fmt.Println("✓ Credentials validated")
+
+	// Resolve channel ID if provided
+	var channelID string
+	if listChannel != "" {
+		channelID, err = client.GetChannelID(listChannel)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Get scheduled messages
+	messages, err := client.ListScheduledMessages(channelID)
+	if err != nil {
+		return err
+	}
+
+	if len(messages) == 0 {
+		fmt.Println("\nNo scheduled messages found.")
+		return nil
+	}
+
+	fmt.Printf("\nFound %d scheduled message(s):\n\n", len(messages))
+	for _, msg := range messages {
+		postAt := time.Unix(int64(msg.PostAt), 0).In(localTZ)
+		text := msg.Text
+		if len(text) > 60 {
+			text = text[:60] + "..."
+		}
+		fmt.Printf("  ID: %s\n", msg.ID)
+		fmt.Printf("  Channel: %s\n", msg.Channel)
+		fmt.Printf("  Scheduled: %s\n", postAt.Format("Mon Jan 02, 2006 at 03:04 PM MST"))
+		fmt.Printf("  Message: %s\n\n", text)
+	}
+
+	return nil
+}
+
+func runDelete(cmd *cobra.Command, args []string) error {
+	// Validate flags
+	if deleteID == "" && !deleteAll {
+		return fmt.Errorf("must specify either --id or --all")
+	}
+	if deleteID != "" && deleteAll {
+		return fmt.Errorf("cannot use both --id and --all")
+	}
+
+	// Load credentials
+	creds, err := LoadCredentials()
+	if err != nil {
+		return err
+	}
+
+	// Create Slack client and validate
+	client := NewSlackClient(creds.Token)
+	if err := client.ValidateCredentials(); err != nil {
+		return err
+	}
+	fmt.Println("✓ Credentials validated")
+
+	// Resolve channel ID
+	channelID, err := client.GetChannelID(deleteChannel)
+	if err != nil {
+		return err
+	}
+
+	if deleteAll {
+		// Get all scheduled messages for this channel
+		messages, err := client.ListScheduledMessages(channelID)
+		if err != nil {
+			return err
+		}
+
+		if len(messages) == 0 {
+			fmt.Println("\nNo scheduled messages found in this channel.")
+			return nil
+		}
+
+		fmt.Printf("\nDeleting %d scheduled message(s) from channel %s...\n", len(messages), channelID)
+		deleted := 0
+		for _, msg := range messages {
+			if msg.Channel == channelID {
+				if err := client.DeleteScheduledMessage(channelID, msg.ID); err != nil {
+					fmt.Printf("  ✗ Failed to delete %s: %v\n", msg.ID, err)
+				} else {
+					fmt.Printf("  ✓ Deleted %s\n", msg.ID)
+					deleted++
+				}
+			}
+		}
+		fmt.Printf("\n✓ Deleted %d message(s)\n", deleted)
+	} else {
+		// Delete single message
+		fmt.Printf("\nDeleting scheduled message %s...\n", deleteID)
+		if err := client.DeleteScheduledMessage(channelID, deleteID); err != nil {
+			return err
+		}
+		fmt.Printf("✓ Deleted scheduled message %s\n", deleteID)
+	}
+
 	return nil
 }
