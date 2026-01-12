@@ -279,5 +279,26 @@ func (s *Scheduler) Schedule() ([]string, error) {
 		scheduledIDs = append(scheduledIDs, id)
 	}
 
+	// Verify messages were actually scheduled by listing them
+	fmt.Printf("\nVerifying scheduled messages...\n")
+	scheduledMessages, err := s.client.ListScheduledMessages(channelID)
+	if err != nil {
+		fmt.Printf("Warning: Could not verify scheduled messages: %v\n", err)
+	} else {
+		fmt.Printf("Found %d scheduled message(s) in channel %s:\n", len(scheduledMessages), channelID)
+		for _, msg := range scheduledMessages {
+			postAt := time.Unix(int64(msg.PostAt), 0)
+			fmt.Printf("  - ID: %s, Scheduled for: %s, Text: %.50s...\n", 
+				msg.ID, postAt.Format("2006-01-02 15:04 MST"), msg.Text)
+		}
+		if len(scheduledMessages) == 0 {
+			fmt.Printf("  ⚠️  No scheduled messages found! The message may not have been scheduled.\n")
+			fmt.Printf("  Check that:\n")
+			fmt.Printf("    1. Your app has 'chat:write' scope (and 'chat:write.public' if posting to public channels)\n")
+			fmt.Printf("    2. Your app/bot is a member of the channel\n")
+			fmt.Printf("    3. The scheduled time is in the future\n")
+		}
+	}
+
 	return scheduledIDs, nil
 }

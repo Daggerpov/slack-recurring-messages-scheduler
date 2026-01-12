@@ -34,13 +34,14 @@ func (c *SlackClient) SendMessage(channel, message string) error {
 
 // ScheduleMessage schedules a message to be sent at a specific time
 func (c *SlackClient) ScheduleMessage(channel, message string, postAt time.Time) (string, error) {
-	// Slack API expects Unix timestamp as string
-	// Note: ScheduleMessage returns (channelID, scheduledTime, error)
-	// For scheduled messages, the timestamp may be empty until the message is sent
-	// The scheduled_message_id is in the API response but not exposed by the library
+	// Slack API expects Unix timestamp as string (UTC)
+	// Convert local time to UTC for the API call
+	postAtUTC := postAt.UTC()
+	postAtUnix := postAtUTC.Unix()
+	
 	respChannel, scheduledTime, err := c.api.ScheduleMessage(
 		channel,
-		fmt.Sprintf("%d", postAt.Unix()),
+		fmt.Sprintf("%d", postAtUnix),
 		slack.MsgOptionText(message, false),
 		slack.MsgOptionAsUser(true),
 	)
@@ -49,16 +50,13 @@ func (c *SlackClient) ScheduleMessage(channel, message string, postAt time.Time)
 	}
 	
 	// Log the scheduling result
-	// Note: For scheduled messages, scheduledTime may be empty (this is normal)
-	// The message is still scheduled even if the timestamp is empty
+	fmt.Printf("Scheduled message for: %s (UTC: %s) in channel: %s\n", 
+		postAt.Format("2006-01-02 15:04 MST"), 
+		postAtUTC.Format("2006-01-02 15:04 UTC"),
+		respChannel)
+	
 	if scheduledTime != "" {
-		fmt.Printf("Scheduled message ID: %s in channel: %s\n", scheduledTime, respChannel)
-	} else {
-		// For scheduled messages, Slack may return empty timestamp
-		// The message is still scheduled - you can verify in Slack with /schedule list
-		fmt.Printf("Scheduled message for: %s in channel: %s\n", 
-			postAt.Format("2006-01-02 15:04 MST"), respChannel)
-		fmt.Printf("Note: Scheduled message ID not available until message is sent. Use '/schedule list' in Slack to verify.\n")
+		fmt.Printf("Scheduled message timestamp: %s\n", scheduledTime)
 	}
 	
 	// Return the scheduled timestamp (or postAt timestamp if empty) as identifier
@@ -66,7 +64,24 @@ func (c *SlackClient) ScheduleMessage(channel, message string, postAt time.Time)
 		return scheduledTime, nil
 	}
 	// Return the postAt timestamp as a fallback identifier
-	return fmt.Sprintf("%d", postAt.Unix()), nil
+	return fmt.Sprintf("%d", postAtUnix), nil
+}
+
+// ListScheduledMessages lists all scheduled messages, optionally filtered by channel
+func (c *SlackClient) ListScheduledMessages(channelID string) ([]slack.ScheduledMessage, error) {
+	params := &slack.GetScheduledMessagesParameters{
+		Limit: 100,
+	}
+	if channelID != "" {
+		params.Channel = channelID
+	}
+	
+	messages, _, err := c.api.GetScheduledMessages(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list scheduled messages: %w", err)
+	}
+	
+	return messages, nil
 }
 
 // ValidateCredentials checks if the token is valid by testing auth
