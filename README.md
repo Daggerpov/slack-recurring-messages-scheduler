@@ -75,6 +75,9 @@ Use "./slack-scheduler [command] --help" for more information about a command.
 - Recurring messages (daily, weekly, monthly)
 - Specific days of the week for weekly schedules
 - Full Slack formatting support (@mentions, emoji, links, etc.)
+- **@channel, @here, @everyone mentions that actually send notifications** (automatically converted to Slack API format)
+- Message groups for easy batch management
+- Modify scheduled messages (change channel, message, time, etc.)
 - Uses your system's local timezone
 
 ## Installation
@@ -167,6 +170,7 @@ chmod 600 .slack-scheduler-credentials.json
 | `--count` | `-n` | `1` | Number of times to send |
 | `--end-date` | `-e` | | End date (YYYY-MM-DD). Recurrence stops on or before this date |
 | `--days` | | | Days of week (comma-separated: `mon,tue,wed,thu,fri,sat,sun`) |
+| `--group` | `-g` | | Name for this message group (for easier management) |
 
 ### Examples
 
@@ -249,11 +253,28 @@ chmod 600 .slack-scheduler-credentials.json
 
 The message field supports full Slack formatting:
 
-- **Mentions:** `@username`, `@channel`, `@here`
+- **Mentions:** `@username`, `@channel`, `@here`, `@everyone`
 - **Emoji:** `:thumbsup:`, `:rocket:`, `:coffee:`
 - **Bold/Italic:** `*bold*`, `_italic_`
 - **Links:** `<https://example.com|Click here>`
 - **Code:** `` `code` ``, ` ```code block``` `
+
+### @channel, @here, @everyone Notifications
+
+Unlike raw Slack API calls, this tool **automatically converts** broadcast mentions to the proper Slack API format:
+
+- `@channel` → `<!channel>` (notifies everyone in the channel)
+- `@here` → `<!here>` (notifies active members)
+- `@everyone` → `<!everyone>` (notifies everyone in the workspace)
+
+This means you can write natural messages like:
+```bash
+./slack-scheduler -m "@channel Don't forget standup!" -c general -d 2025-01-17 -t 09:00
+```
+
+And recipients will actually receive notifications, just like when you type `@channel` in Slack directly.
+
+**Note:** For @channel/@here/@everyone to work, you must use a **User OAuth Token** (`xoxp-...`), not a Bot Token (`xoxb-...`).
 
 ## Managing Scheduled Messages
 
@@ -277,9 +298,50 @@ Cancel scheduled messages:
 # Delete a specific scheduled message by ID
 ./slack-scheduler delete -c general --id Q0A7Z0QMWAF
 
+# Delete all messages in a group
+./slack-scheduler delete --group "standup-reminders"
+
 # Delete ALL scheduled messages in a channel
 ./slack-scheduler delete -c general --all
 ```
+
+### Modify Scheduled Messages
+
+Change attributes of existing scheduled messages. Since the Slack API doesn't support updating scheduled messages directly, this command deletes and recreates them with the new parameters.
+
+```bash
+# Change the channel for all messages in a group
+./slack-scheduler modify --group "standup" --channel new-channel
+
+# Change the message text for a group
+./slack-scheduler modify --group "standup" --message "New message text @channel"
+
+# Change the time for all messages in a group
+./slack-scheduler modify --group "standup" --time 10:00
+
+# Modify a single scheduled message
+./slack-scheduler modify --id Q0A7Z0QMWAF --channel general --message "Updated text"
+```
+
+### Message Groups
+
+When you schedule recurring messages, they're automatically saved as a "group" for easier management. You can also specify a custom group name:
+
+```bash
+# Create a group with a custom name
+./slack-scheduler -m "Standup time!" -c engineering -d 2025-01-13 -t 09:00 -i weekly -n 8 -g "standup-reminders"
+
+# List all groups
+./slack-scheduler list --groups
+
+# Modify all messages in a group at once
+./slack-scheduler modify --group "standup-reminders" --channel new-engineering
+
+# Delete all messages in a group
+./slack-scheduler delete --group "standup-reminders"
+```
+
+Groups are stored locally in `.slack-scheduler-groups.json` and track which scheduled message IDs belong together.
 
 ## Important: Slack UI Limitation ⚠️ **Messages scheduled via the Slack API do NOT appear in Slack's "Scheduled Messages" UI.**
 

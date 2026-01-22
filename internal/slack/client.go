@@ -2,10 +2,55 @@ package slack
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/slack-go/slack"
 )
+
+// ConvertMentions converts human-readable mentions to Slack API format.
+// @channel -> <!channel>, @here -> <!here>, @everyone -> <!everyone>
+// This is necessary because the Slack API requires special syntax for
+// broadcast mentions to actually trigger notifications.
+func ConvertMentions(message string) string {
+	// Convert broadcast mentions (case-insensitive)
+	// Use a lookbehind-like pattern: only match @ at start of string or after whitespace
+	// Also use word boundary \b at the end to avoid matching "@channels"
+	patterns := []struct {
+		pattern     *regexp.Regexp
+		replacement string
+	}{
+		// Match @channel only at start of string or after whitespace
+		{regexp.MustCompile(`(?i)(^|[\s])@channel\b`), "${1}<!channel>"},
+		{regexp.MustCompile(`(?i)(^|[\s])@here\b`), "${1}<!here>"},
+		{regexp.MustCompile(`(?i)(^|[\s])@everyone\b`), "${1}<!everyone>"},
+	}
+
+	result := message
+	for _, p := range patterns {
+		result = p.pattern.ReplaceAllString(result, p.replacement)
+	}
+
+	return result
+}
+
+// ConvertMentionsBack converts Slack API format mentions back to human-readable format.
+// <!channel> -> @channel, <!here> -> @here, <!everyone> -> @everyone
+func ConvertMentionsBack(message string) string {
+	replacements := map[string]string{
+		"<!channel>":  "@channel",
+		"<!here>":     "@here",
+		"<!everyone>": "@everyone",
+	}
+
+	result := message
+	for apiFormat, humanFormat := range replacements {
+		result = strings.ReplaceAll(result, apiFormat, humanFormat)
+	}
+
+	return result
+}
 
 // Client wraps the Slack API client
 type Client struct {
@@ -21,10 +66,13 @@ func NewClient(token string) *Client {
 
 // SendMessage sends a message to the specified channel
 func (c *Client) SendMessage(channel, message string) error {
+	// Convert human-readable mentions to Slack API format
+	convertedMessage := ConvertMentions(message)
+
 	_, _, err := c.api.PostMessage(
 		channel,
-		slack.MsgOptionText(message, false), // false = parse markdown/mentions
-		slack.MsgOptionAsUser(true),         // Send as the authenticated user
+		slack.MsgOptionText(convertedMessage, false), // false = don't escape, preserve formatting
+		slack.MsgOptionAsUser(true),                  // Send as the authenticated user
 	)
 	if err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
@@ -34,6 +82,9 @@ func (c *Client) SendMessage(channel, message string) error {
 
 // ScheduleMessage schedules a message to be sent at a specific time
 func (c *Client) ScheduleMessage(channel, message string, postAt time.Time) (string, error) {
+	// Convert human-readable mentions to Slack API format
+	convertedMessage := ConvertMentions(message)
+
 	// Slack API expects Unix timestamp as string (UTC)
 	// Convert local time to UTC for the API call
 	postAtUTC := postAt.UTC()
@@ -42,7 +93,7 @@ func (c *Client) ScheduleMessage(channel, message string, postAt time.Time) (str
 	respChannel, scheduledTime, err := c.api.ScheduleMessage(
 		channel,
 		fmt.Sprintf("%d", postAtUnix),
-		slack.MsgOptionText(message, false),
+		slack.MsgOptionText(convertedMessage, false), // false = don't escape, preserve formatting
 		slack.MsgOptionAsUser(true),
 	)
 	if err != nil {

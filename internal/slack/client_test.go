@@ -4,6 +4,155 @@ import (
 	"testing"
 )
 
+// TestConvertMentions tests the conversion of human-readable mentions to Slack API format
+func TestConvertMentions(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "convert @channel",
+			input: "Hello @channel, please check this",
+			want:  "Hello <!channel>, please check this",
+		},
+		{
+			name:  "convert @here",
+			input: "@here urgent meeting now",
+			want:  "<!here> urgent meeting now",
+		},
+		{
+			name:  "convert @everyone",
+			input: "@everyone please read this",
+			want:  "<!everyone> please read this",
+		},
+		{
+			name:  "convert multiple mentions",
+			input: "@channel and @here please pay attention",
+			want:  "<!channel> and <!here> please pay attention",
+		},
+		{
+			name:  "case insensitive @CHANNEL",
+			input: "@CHANNEL important!",
+			want:  "<!channel> important!",
+		},
+		{
+			name:  "case insensitive @Here",
+			input: "@Here please respond",
+			want:  "<!here> please respond",
+		},
+		{
+			name:  "don't convert @channels (plural)",
+			input: "Check the @channels setting",
+			want:  "Check the @channels setting",
+		},
+		{
+			name:  "don't convert email-like patterns",
+			input: "Email me at user@here.com",
+			want:  "Email me at user@here.com",
+		},
+		{
+			name:  "no mentions - pass through",
+			input: "Hello team, this is a regular message",
+			want:  "Hello team, this is a regular message",
+		},
+		{
+			name:  "preserve other @ mentions",
+			input: "@channel @john please review",
+			want:  "<!channel> @john please review",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "@channel at end of message",
+			input: "Please respond @channel",
+			want:  "Please respond <!channel>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ConvertMentions(tt.input)
+			if got != tt.want {
+				t.Errorf("ConvertMentions(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestConvertMentionsBack tests the reverse conversion from Slack API format to human-readable
+func TestConvertMentionsBack(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "convert <!channel>",
+			input: "Hello <!channel>, please check this",
+			want:  "Hello @channel, please check this",
+		},
+		{
+			name:  "convert <!here>",
+			input: "<!here> urgent meeting now",
+			want:  "@here urgent meeting now",
+		},
+		{
+			name:  "convert <!everyone>",
+			input: "<!everyone> please read this",
+			want:  "@everyone please read this",
+		},
+		{
+			name:  "convert multiple mentions",
+			input: "<!channel> and <!here> please pay attention",
+			want:  "@channel and @here please pay attention",
+		},
+		{
+			name:  "no special mentions - pass through",
+			input: "Hello team, this is a regular message",
+			want:  "Hello team, this is a regular message",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ConvertMentionsBack(tt.input)
+			if got != tt.want {
+				t.Errorf("ConvertMentionsBack(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestMentionConversionRoundTrip tests that conversion is reversible
+func TestMentionConversionRoundTrip(t *testing.T) {
+	testCases := []string{
+		"@channel please respond",
+		"@here urgent",
+		"@everyone announcement",
+		"@channel and @here and @everyone",
+		"No mentions here",
+	}
+
+	for _, original := range testCases {
+		t.Run(original, func(t *testing.T) {
+			converted := ConvertMentions(original)
+			backToOriginal := ConvertMentionsBack(converted)
+			if backToOriginal != original {
+				t.Errorf("Round trip failed: %q -> %q -> %q", original, converted, backToOriginal)
+			}
+		})
+	}
+}
+
 func TestNewClient(t *testing.T) {
 	token := "xoxp-test-token"
 	client := NewClient(token)
