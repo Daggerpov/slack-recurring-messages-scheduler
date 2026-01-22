@@ -32,6 +32,11 @@ var (
 
 	// CLI flags for delete command
 	deleteAll bool
+
+	// CLI flags for modify command
+	modifyChannel string
+	modifyMessage string
+	modifyTime    string
 )
 
 // IndexedMessage wraps a scheduled message with a simple integer ID
@@ -154,6 +159,36 @@ You can delete multiple messages at once using IDs (integers) or group labels (l
 	}
 	deleteCmd.Flags().BoolVar(&deleteAll, "all", false, "Delete all scheduled messages")
 	rootCmd.AddCommand(deleteCmd)
+
+	// Modify command to update scheduled messages
+	modifyCmd := &cobra.Command{
+		Use:   "modify [IDs or Groups...]",
+		Short: "Modify scheduled messages",
+		Long: `Modify scheduled messages by ID or group.
+
+Since the Slack API doesn't support updating scheduled messages directly,
+this command deletes the existing messages and creates new ones with the
+updated parameters.
+
+Use './slack-scheduler list' to find message IDs and groups.
+You can modify multiple messages at once using IDs (integers) or group labels (letters).`,
+		Example: `  # Change the message text for specific messages
+  ./slack-scheduler modify 1 2 -m "New message text"
+
+  # Change all messages in group A to a new channel
+  ./slack-scheduler modify A -c new-channel
+
+  # Change the time for all messages in a group
+  ./slack-scheduler modify B -t 10:00
+
+  # Combine multiple changes
+  ./slack-scheduler modify A 3 -m "Updated text" -t 14:30 -c general`,
+		RunE: runModify,
+	}
+	modifyCmd.Flags().StringVarP(&modifyChannel, "channel", "c", "", "New channel for the messages")
+	modifyCmd.Flags().StringVarP(&modifyMessage, "message", "m", "", "New message text")
+	modifyCmd.Flags().StringVarP(&modifyTime, "time", "t", "", "New time (HH:MM, 24-hour format)")
+	rootCmd.AddCommand(modifyCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -599,5 +634,203 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("\n✓ Deleted %d message(s)\n", deleted)
 
+	return nil
+}
+
+func runModify(cmd *cobra.Command, args []string) error {
+	// Validate arguments
+	if len(args) == 0 {
+		return fmt.Errorf("must specify message IDs or group labels\nUsage: ./slack-scheduler modify [IDs or Groups...] -m \"new message\" -t 10:00 -c channel")
+	}
+
+	// Check that at least one modification is specified
+	if modifyChannel == "" && modifyMessage == "" && modifyTime == "" {
+		return fmt.Errorf("must specify at least one attribute to modify (--channel, --message, or --time)")
+	}
+
+	// Validate time format if provided
+	if modifyTime != "" {
+		if _, err := time.Parse("15:04", modifyTime); err != nil {
+			return fmt.Errorf("invalid time format: %s (use HH:MM, 24-hour)", modifyTime)
+		}
+	}
+
+	// Load credentials
+	creds, err := config.LoadCredentials()
+	if err != nil {
+		return err
+	}
+
+	// Create Slack client and validate
+	client := slack.NewClient(creds.Token)
+	if err := client.ValidateCredentials(); err != nil {
+		return err
+	}
+	fmt.Println("✓ Credentials validated")
+
+	// Get all scheduled messages
+	messages, err := client.ListScheduledMessages("")
+	if err != nil {
+		return err
+	}
+
+	if len(messages) == 0 {
+		fmt.Println("\nNo scheduled messages found.")
+		return nil
+	}
+
+	// Get channel name map for display
+	channelNameMap, err := client.GetChannelNameMap()
+	if err != nil {
+		channelNameMap = make(map[string]string)
+	}
+
+	// Build indexed messages and groups
+	indexed := buildIndexedMessages(messages, channelNameMap)
+	groups := groupMessages(indexed)
+
+	// Create lookup maps
+	indexToMsg := make(map[int]*IndexedMessage)
+	for _, msg := range indexed {
+		indexToMsg[msg.Index] = msg
+	}
+
+	groupLabelToGroup := make(map[string]*MessageGroup)
+	for _, g := range groups {
+		groupLabelToGroup[strings.ToUpper(g.Label)] = g
+	}
+
+	// Collect messages to modify
+	toModify := make(map[int]*IndexedMessage) // Use map to avoid duplicates
+
+	for _, arg := range args {
+		arg = strings.TrimSpace(arg)
+
+		// Try to parse as integer ID first
+		if id, err := strconv.Atoi(arg); err == nil {
+			msg, exists := indexToMsg[id]
+			if !exists {
+				return fmt.Errorf("message ID %d not found (valid IDs: 1-%d)", id, len(indexed))
+			}
+			toModify[msg.Index] = msg
+			continue
+		}
+
+		// Try to parse as group label
+		if isGroupLabel(arg) {
+			group, exists := groupLabelToGroup[strings.ToUpper(arg)]
+			if !exists {
+				validLabels := make([]string, len(groups))
+				for i, g := range groups {
+					validLabels[i] = g.Label
+				}
+				return fmt.Errorf("group %s not found (valid groups: %s)", strings.ToUpper(arg), strings.Join(validLabels, ", "))
+			}
+			for _, msg := range group.Messages {
+				toModify[msg.Index] = msg
+			}
+			continue
+		}
+
+		return fmt.Errorf("invalid argument: %s (expected integer ID or group label like A, B, A2, etc.)", arg)
+	}
+
+	if len(toModify) == 0 {
+		fmt.Println("\nNo messages to modify.")
+		return nil
+	}
+
+	// Resolve new channel ID if changing channel
+	var newChannelID string
+	if modifyChannel != "" {
+		newChannelID, err = client.GetChannelID(modifyChannel)
+		if err != nil {
+			return fmt.Errorf("failed to resolve new channel: %w", err)
+		}
+	}
+
+	// Sort by ID for consistent output
+	var sortedMsgs []*IndexedMessage
+	for _, msg := range toModify {
+		sortedMsgs = append(sortedMsgs, msg)
+	}
+	sort.Slice(sortedMsgs, func(i, j int) bool {
+		return sortedMsgs[i].Index < sortedMsgs[j].Index
+	})
+
+	// Preview changes
+	fmt.Printf("\nModifying %d scheduled message(s):\n", len(sortedMsgs))
+	if modifyChannel != "" {
+		fmt.Printf("  New channel: #%s\n", modifyChannel)
+	}
+	if modifyMessage != "" {
+		displayMsg := modifyMessage
+		if len(displayMsg) > 50 {
+			displayMsg = displayMsg[:47] + "..."
+		}
+		fmt.Printf("  New message: %s\n", displayMsg)
+	}
+	if modifyTime != "" {
+		fmt.Printf("  New time: %s\n", modifyTime)
+	}
+	fmt.Println()
+
+	// Process each message: delete old, create new
+	modified := 0
+	for _, msg := range sortedMsgs {
+		// Determine new values
+		targetChannelID := msg.ChannelID
+		targetChannelName := msg.ChannelName
+		if modifyChannel != "" {
+			targetChannelID = newChannelID
+			targetChannelName = modifyChannel
+		}
+
+		targetMessage := slack.ConvertMentionsBack(msg.Text)
+		if modifyMessage != "" {
+			targetMessage = modifyMessage
+		}
+
+		targetTime := msg.PostAt
+		if modifyTime != "" {
+			parts := strings.Split(modifyTime, ":")
+			hour, _ := strconv.Atoi(parts[0])
+			min, _ := strconv.Atoi(parts[1])
+			targetTime = time.Date(
+				msg.PostAt.Year(), msg.PostAt.Month(), msg.PostAt.Day(),
+				hour, min, 0, 0, msg.PostAt.Location(),
+			)
+		}
+
+		// Skip if the new time would be in the past
+		if targetTime.Before(time.Now()) {
+			fmt.Printf("  ⚠ Skipping ID %d: new time %s is in the past\n", msg.Index, targetTime.Format("2006-01-02 15:04"))
+			continue
+		}
+
+		// Delete old message
+		if err := client.DeleteScheduledMessage(msg.ChannelID, msg.SlackID); err != nil {
+			fmt.Printf("  ✗ Failed to delete ID %d: %v\n", msg.Index, err)
+			continue
+		}
+
+		// Create new message
+		newID, err := client.ScheduleMessage(targetChannelID, targetMessage, targetTime)
+		if err != nil {
+			fmt.Printf("  ✗ Failed to reschedule ID %d: %v\n", msg.Index, err)
+			fmt.Printf("      Original message was deleted but could not be rescheduled!\n")
+			continue
+		}
+
+		displayText := targetMessage
+		if len(displayText) > 40 {
+			displayText = displayText[:37] + "..."
+		}
+		fmt.Printf("  ✓ Modified ID %d → new ID %s (#%s, %s)\n",
+			msg.Index, newID, targetChannelName, targetTime.Format("Jan 02 15:04"))
+		modified++
+	}
+
+	fmt.Printf("\n✓ Modified %d message(s)\n", modified)
 	return nil
 }
