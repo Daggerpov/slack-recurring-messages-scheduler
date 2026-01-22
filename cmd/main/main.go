@@ -446,12 +446,8 @@ func runList(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nFound %d scheduled message(s) in %d group(s):\n", len(messages), len(groups))
 
 	for _, group := range groups {
-		// Truncate message text for display
 		// Convert @mentions back for display
 		displayText := slack.ConvertMentionsBack(group.Text)
-		if len(displayText) > 60 {
-			displayText = displayText[:60] + "..."
-		}
 
 		fmt.Printf("\n━━━ Group %s ━━━\n", group.Label)
 		fmt.Printf("    Message: %s\n", displayText)
