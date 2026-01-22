@@ -3,7 +3,7 @@
 *.credentials.json
 
 # Go build artifacts
-slack-scheduler
+/slack-scheduler
 slack-repeated-schedule-sender
 *.exe
 *.exe~

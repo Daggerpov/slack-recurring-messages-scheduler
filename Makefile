@@ -5,11 +5,11 @@ BINARY_NAME=slack-scheduler
 
 # Build the application
 build:
-	go build -o $(BINARY_NAME) ./cmd/main
+	go build -o $(BINARY_NAME) ./cmd/slack-scheduler
 
 # Install globally
 install:
-	go install ./cmd/main
+	go install ./cmd/slack-scheduler
 
 # Run all tests
 test:
