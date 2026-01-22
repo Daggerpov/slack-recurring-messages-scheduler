@@ -241,3 +241,6 @@ func (c *Client) GetChannelNameMap() (map[string]string, error) {
 func (c *Client) API() *slack.Client {
 	return c.api
 }
+
+// ScheduledMessage is an alias to the slack library's ScheduledMessage type
+type ScheduledMessage = slack.ScheduledMessage
