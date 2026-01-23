@@ -31,7 +31,7 @@ A CLI tool to schedule Slack messages with support for:
 - One-time scheduled messages
 - Recurring messages (daily, weekly, monthly)
 - Specific days of the week for weekly schedules
-- Full Slack formatting support (@mentions, emoji, etc.)
+- Full Slack formatting support (@mentions, #channel links, emoji, etc.)
 
 Messages are scheduled using your system's local timezone.
 
@@ -61,7 +61,7 @@ Flags:
       --days string       Days of week for weekly schedule (comma-separated: mon,tue,wed,thu,fri,sat,sun)
   -h, --help              help for slack-scheduler
   -i, --interval string   Repeat interval: none, daily, weekly, monthly (default "none")
-  -m, --message string    Message to send (supports @mentions, emoji, Slack formatting)
+  -m, --message string    Message to send (supports @mentions, #channel links, emoji, Slack formatting)
   -t, --time string       Time to send (HH:MM, 24-hour format, local time)
 
 Use "./slack-scheduler [command] --help" for more information about a command.
@@ -74,8 +74,9 @@ Use "./slack-scheduler [command] --help" for more information about a command.
 - Schedule one-time messages
 - Recurring messages (daily, weekly, monthly)
 - Specific days of the week for weekly schedules
-- Full Slack formatting support (@mentions, emoji, links, etc.)
+- Full Slack formatting support (@mentions, #channel links, emoji, etc.)
 - **@channel, @here, @everyone mentions that actually send notifications** (automatically converted to Slack API format)
+- **#channel links that are clickable** (automatically converted to Slack API format)
 - Message groups for easy batch management
 - Modify scheduled messages (change channel, message, time, etc.)
 - Uses your system's local timezone
@@ -157,7 +158,7 @@ chmod 600 .slack-scheduler-credentials.json
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--message` | `-m` | Message to send (supports @mentions, emoji, formatting) |
+| `--message` | `-m` | Message to send (supports @mentions, #channel links, emoji, formatting) |
 | `--channel` | `-c` | Channel name or ID |
 | `--date` | `-d` | Start date (YYYY-MM-DD) |
 | `--time` | `-t` | Time to send (HH:MM, 24-hour, local time) |
@@ -254,6 +255,7 @@ chmod 600 .slack-scheduler-credentials.json
 The message field supports full Slack formatting:
 
 - **Mentions:** `@username`, `@channel`, `@here`, `@everyone`
+- **Channel links:** `#channel-name` (automatically converted to clickable links)
 - **Emoji:** `:thumbsup:`, `:rocket:`, `:coffee:`
 - **Bold/Italic:** `*bold*`, `_italic_`
 - **Links:** `<https://example.com|Click here>`
@@ -275,6 +277,20 @@ This means you can write natural messages like:
 And recipients will actually receive notifications, just like when you type `@channel` in Slack directly.
 
 **Note:** For @channel/@here/@everyone to work, you must use a **User OAuth Token** (`xoxp-...`), not a Bot Token (`xoxb-...`).
+
+### #channel Links
+
+Channel references are also automatically converted to clickable Slack links:
+
+- `#general` → `<#C1234567|general>` (clickable channel link)
+- `#dev-team` → `<#C7654321|dev-team>` (clickable channel link)
+
+Example:
+```bash
+./slack-scheduler -m "Please post updates in #engineering" -c general -d 2025-01-17 -t 09:00
+```
+
+The `#engineering` reference will become a clickable link in the message. If the channel doesn't exist, the original text is preserved.
 
 ## Managing Scheduled Messages
 

@@ -65,7 +65,7 @@ func main() {
 - One-time scheduled messages
 - Recurring messages (daily, weekly, monthly)
 - Specific days of the week for weekly schedules
-- Full Slack formatting support (@mentions, emoji, etc.)
+- Full Slack formatting support (@mentions, #channel links, emoji, etc.)
 
 Messages are scheduled using your system's local timezone.
 
@@ -74,22 +74,20 @@ to the proper Slack API format to ensure notifications are sent.`,
 		Example: `  # Send a one-time message
   ./slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
 
-  # Send weekly until end date (start date defaults to today)
-  ./slack-scheduler -m "Weekly reminder!" -c general -t 14:00 -i weekly -e 2025-04-01
-
-  # Send every Friday from today until end date
-  ./slack-scheduler -m "TGIF!" -c general -t 14:00 -i weekly --days fri -e 2025-04-01
+  # Send weekly on Fridays until end date (start date defaults to today)
+  ./slack-scheduler -m "Weekly reminder!" -c general -t 14:00 -i weekly --days fri -e 2025-04-01
 
   # Send on Monday and Friday at 9am for 8 occurrences
-  ./slack-scheduler -m "Standup time!" -c engineering -d 2025-01-13 -t 09:00 -i weekly -n 8 --days mon,fri
+  ./slack-scheduler -m "Meeting happening now!" -c engineering -d 2025-01-13 -t 09:00 -i weekly -n 8 --days mon,fri
 
-  # Send @channel notification that actually works
-  ./slack-scheduler -m "@channel Don't forget standup!" -c general -d 2025-01-17 -t 09:00`,
+  # @channel, @here, @everyone, @mentions work
+  # So do #channel mentions:
+  ./slack-scheduler -m "@channel Hey, please check #meetings." -c general -d 2025-01-17 -t 09:00`,
 		RunE: runSchedule,
 	}
 
 	// Required flags
-	rootCmd.Flags().StringVarP(&message, "message", "m", "", "Message to send (supports @mentions, emoji, Slack formatting)")
+	rootCmd.Flags().StringVarP(&message, "message", "m", "", "Message to send (supports @mentions, #channel links, emoji, Slack formatting)")
 	rootCmd.Flags().StringVarP(&channel, "channel", "c", "", "Channel name or ID to send to")
 	rootCmd.Flags().StringVarP(&startDate, "date", "d", "", "Start date (YYYY-MM-DD)")
 	rootCmd.Flags().StringVarP(&sendTime, "time", "t", "", "Time to send (HH:MM, 24-hour format, local time)")
