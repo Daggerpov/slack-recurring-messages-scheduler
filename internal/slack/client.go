@@ -52,6 +52,68 @@ func ConvertMentionsBack(message string) string {
 	return result
 }
 
+// ConvertChannelLinks converts human-readable channel links to Slack API format.
+// #channel-name -> <#CHANNEL_ID|channel-name>
+// The lookupChannel function is used to resolve channel names to IDs.
+// If a channel cannot be found, the original text is preserved.
+func ConvertChannelLinks(message string, lookupChannel func(name string) (string, error)) string {
+	// Match #channel-name patterns (Slack channel names: lowercase, numbers, hyphens, underscores)
+	// Only match at start of string or after whitespace to avoid matching URLs or other patterns
+	channelPattern := regexp.MustCompile(`(^|[\s])#([a-z0-9][a-z0-9_-]*)`)
+
+	result := channelPattern.ReplaceAllStringFunc(message, func(match string) string {
+		// Extract the prefix (space or empty) and channel name
+		submatches := channelPattern.FindStringSubmatch(match)
+		if len(submatches) < 3 {
+			return match
+		}
+		prefix := submatches[1]
+		channelName := submatches[2]
+
+		// Skip if it looks like a number only (e.g., #123)
+		if regexp.MustCompile(`^\d+$`).MatchString(channelName) {
+			return match
+		}
+
+		// Look up the channel ID
+		channelID, err := lookupChannel(channelName)
+		if err != nil {
+			// Channel not found, preserve original text
+			return match
+		}
+
+		// Return the Slack API format: <#CHANNEL_ID|channel-name>
+		return fmt.Sprintf("%s<#%s|%s>", prefix, channelID, channelName)
+	})
+
+	return result
+}
+
+// ConvertChannelLinksBack converts Slack API format channel links back to human-readable format.
+// <#CHANNEL_ID|channel-name> -> #channel-name
+// <#CHANNEL_ID> -> #CHANNEL_ID (if no name provided)
+func ConvertChannelLinksBack(message string) string {
+	// Match <#CHANNEL_ID|channel-name> or <#CHANNEL_ID> patterns
+	channelPattern := regexp.MustCompile(`<#([A-Z0-9]+)(?:\|([^>]+))?>`)
+
+	result := channelPattern.ReplaceAllStringFunc(message, func(match string) string {
+		submatches := channelPattern.FindStringSubmatch(match)
+		if len(submatches) < 2 {
+			return match
+		}
+
+		// If we have a channel name (after |), use it
+		if len(submatches) >= 3 && submatches[2] != "" {
+			return "#" + submatches[2]
+		}
+
+		// Otherwise, just use the channel ID
+		return "#" + submatches[1]
+	})
+
+	return result
+}
+
 // Client wraps the Slack API client
 type Client struct {
 	api *slack.Client
@@ -69,6 +131,9 @@ func (c *Client) SendMessage(channel, message string) error {
 	// Convert human-readable mentions to Slack API format
 	convertedMessage := ConvertMentions(message)
 
+	// Convert channel links (#channel-name -> <#CHANNEL_ID|channel-name>)
+	convertedMessage = ConvertChannelLinks(convertedMessage, c.GetChannelID)
+
 	_, _, err := c.api.PostMessage(
 		channel,
 		slack.MsgOptionText(convertedMessage, false), // false = don't escape, preserve formatting
@@ -84,6 +149,9 @@ func (c *Client) SendMessage(channel, message string) error {
 func (c *Client) ScheduleMessage(channel, message string, postAt time.Time) (string, error) {
 	// Convert human-readable mentions to Slack API format
 	convertedMessage := ConvertMentions(message)
+
+	// Convert channel links (#channel-name -> <#CHANNEL_ID|channel-name>)
+	convertedMessage = ConvertChannelLinks(convertedMessage, c.GetChannelID)
 
 	// Slack API expects Unix timestamp as string (UTC)
 	// Convert local time to UTC for the API call
