@@ -37,12 +37,12 @@ IMPORTANT: @channel, @here, and @everyone mentions are automatically converted
 to the proper Slack API format to ensure notifications are sent.
 
 Usage:
-  ./slack-scheduler [flags]
-  ./slack-scheduler [command]
+  slack-scheduler [flags]
+  slack-scheduler [command]
 
 Examples:
   # Send a one-time message
-  ./slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
+  slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
 
   # Send weekly on Fridays until end date (start date defaults to today)
   ./slack-scheduler -m "Weekly reminder!" -c general -t 14:00 -i weekly --days fri -e 2025-04-01
@@ -56,6 +56,7 @@ Examples:
 
 Available Commands:
   completion  Generate the autocompletion script for the specified shell
+  delete      Delete scheduled messages
   delete      Delete scheduled messages
   help        Help about any command
   init        Create a credentials template file
