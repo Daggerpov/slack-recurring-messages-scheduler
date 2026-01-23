@@ -2,10 +2,117 @@ package slack
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/slack-go/slack"
 )
+
+// ConvertMentions converts human-readable mentions to Slack API format.
+// @channel -> <!channel>, @here -> <!here>, @everyone -> <!everyone>
+// This is necessary because the Slack API requires special syntax for
+// broadcast mentions to actually trigger notifications.
+func ConvertMentions(message string) string {
+	// Convert broadcast mentions (case-insensitive)
+	// Use a lookbehind-like pattern: only match @ at start of string or after whitespace
+	// Also use word boundary \b at the end to avoid matching "@channels"
+	patterns := []struct {
+		pattern     *regexp.Regexp
+		replacement string
+	}{
+		// Match @channel only at start of string or after whitespace
+		{regexp.MustCompile(`(?i)(^|[\s])@channel\b`), "${1}<!channel>"},
+		{regexp.MustCompile(`(?i)(^|[\s])@here\b`), "${1}<!here>"},
+		{regexp.MustCompile(`(?i)(^|[\s])@everyone\b`), "${1}<!everyone>"},
+	}
+
+	result := message
+	for _, p := range patterns {
+		result = p.pattern.ReplaceAllString(result, p.replacement)
+	}
+
+	return result
+}
+
+// ConvertMentionsBack converts Slack API format mentions back to human-readable format.
+// <!channel> -> @channel, <!here> -> @here, <!everyone> -> @everyone
+func ConvertMentionsBack(message string) string {
+	replacements := map[string]string{
+		"<!channel>":  "@channel",
+		"<!here>":     "@here",
+		"<!everyone>": "@everyone",
+	}
+
+	result := message
+	for apiFormat, humanFormat := range replacements {
+		result = strings.ReplaceAll(result, apiFormat, humanFormat)
+	}
+
+	return result
+}
+
+// ConvertChannelLinks converts human-readable channel links to Slack API format.
+// #channel-name -> <#CHANNEL_ID|channel-name>
+// The lookupChannel function is used to resolve channel names to IDs.
+// If a channel cannot be found, the original text is preserved.
+func ConvertChannelLinks(message string, lookupChannel func(name string) (string, error)) string {
+	// Match #channel-name patterns (Slack channel names: lowercase, numbers, hyphens, underscores)
+	// Only match at start of string or after whitespace to avoid matching URLs or other patterns
+	channelPattern := regexp.MustCompile(`(^|[\s])#([a-z0-9][a-z0-9_-]*)`)
+
+	result := channelPattern.ReplaceAllStringFunc(message, func(match string) string {
+		// Extract the prefix (space or empty) and channel name
+		submatches := channelPattern.FindStringSubmatch(match)
+		if len(submatches) < 3 {
+			return match
+		}
+		prefix := submatches[1]
+		channelName := submatches[2]
+
+		// Skip if it looks like a number only (e.g., #123)
+		if regexp.MustCompile(`^\d+$`).MatchString(channelName) {
+			return match
+		}
+
+		// Look up the channel ID
+		channelID, err := lookupChannel(channelName)
+		if err != nil {
+			// Channel not found, preserve original text
+			return match
+		}
+
+		// Return the Slack API format: <#CHANNEL_ID|channel-name>
+		return fmt.Sprintf("%s<#%s|%s>", prefix, channelID, channelName)
+	})
+
+	return result
+}
+
+// ConvertChannelLinksBack converts Slack API format channel links back to human-readable format.
+// <#CHANNEL_ID|channel-name> -> #channel-name
+// <#CHANNEL_ID> -> #CHANNEL_ID (if no name provided)
+func ConvertChannelLinksBack(message string) string {
+	// Match <#CHANNEL_ID|channel-name> or <#CHANNEL_ID> patterns
+	channelPattern := regexp.MustCompile(`<#([A-Z0-9]+)(?:\|([^>]+))?>`)
+
+	result := channelPattern.ReplaceAllStringFunc(message, func(match string) string {
+		submatches := channelPattern.FindStringSubmatch(match)
+		if len(submatches) < 2 {
+			return match
+		}
+
+		// If we have a channel name (after |), use it
+		if len(submatches) >= 3 && submatches[2] != "" {
+			return "#" + submatches[2]
+		}
+
+		// Otherwise, just use the channel ID
+		return "#" + submatches[1]
+	})
+
+	return result
+}
 
 // Client wraps the Slack API client
 type Client struct {
@@ -21,10 +128,16 @@ func NewClient(token string) *Client {
 
 // SendMessage sends a message to the specified channel
 func (c *Client) SendMessage(channel, message string) error {
+	// Convert human-readable mentions to Slack API format
+	convertedMessage := ConvertMentions(message)
+
+	// Convert channel links (#channel-name -> <#CHANNEL_ID|channel-name>)
+	convertedMessage = ConvertChannelLinks(convertedMessage, c.GetChannelID)
+
 	_, _, err := c.api.PostMessage(
 		channel,
-		slack.MsgOptionText(message, false), // false = parse markdown/mentions
-		slack.MsgOptionAsUser(true),         // Send as the authenticated user
+		slack.MsgOptionText(convertedMessage, false), // false = don't escape, preserve formatting
+		slack.MsgOptionAsUser(true),                  // Send as the authenticated user
 	)
 	if err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
@@ -34,6 +147,12 @@ func (c *Client) SendMessage(channel, message string) error {
 
 // ScheduleMessage schedules a message to be sent at a specific time
 func (c *Client) ScheduleMessage(channel, message string, postAt time.Time) (string, error) {
+	// Convert human-readable mentions to Slack API format
+	convertedMessage := ConvertMentions(message)
+
+	// Convert channel links (#channel-name -> <#CHANNEL_ID|channel-name>)
+	convertedMessage = ConvertChannelLinks(convertedMessage, c.GetChannelID)
+
 	// Slack API expects Unix timestamp as string (UTC)
 	// Convert local time to UTC for the API call
 	postAtUTC := postAt.UTC()
@@ -42,7 +161,7 @@ func (c *Client) ScheduleMessage(channel, message string, postAt time.Time) (str
 	respChannel, scheduledTime, err := c.api.ScheduleMessage(
 		channel,
 		fmt.Sprintf("%d", postAtUnix),
-		slack.MsgOptionText(message, false),
+		slack.MsgOptionText(convertedMessage, false), // false = don't escape, preserve formatting
 		slack.MsgOptionAsUser(true),
 	)
 	if err != nil {
@@ -190,3 +309,6 @@ func (c *Client) GetChannelNameMap() (map[string]string, error) {
 func (c *Client) API() *slack.Client {
 	return c.api
 }
+
+// ScheduledMessage is an alias to the slack library's ScheduledMessage type
+type ScheduledMessage = slack.ScheduledMessage

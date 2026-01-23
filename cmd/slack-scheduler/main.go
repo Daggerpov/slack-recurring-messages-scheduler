@@ -1,0 +1,832 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/daggerpov/slack-recurring-messages-scheduler/internal/config"
+	"github.com/daggerpov/slack-recurring-messages-scheduler/internal/scheduler"
+	"github.com/daggerpov/slack-recurring-messages-scheduler/internal/slack"
+	"github.com/daggerpov/slack-recurring-messages-scheduler/internal/types"
+	"github.com/spf13/cobra"
+)
+
+var (
+	// CLI flags for schedule command
+	message     string
+	channel     string
+	startDate   string
+	sendTime    string
+	interval    string
+	repeatCount int
+	endDate     string
+	days        string
+
+	// CLI flags for list command
+	listChannel string
+
+	// CLI flags for delete command
+	deleteAll bool
+
+	// CLI flags for modify command
+	modifyChannel string
+	modifyMessage string
+	modifyTime    string
+)
+
+// IndexedMessage wraps a scheduled message with a simple integer ID
+type IndexedMessage struct {
+	Index       int
+	SlackID     string
+	ChannelID   string
+	ChannelName string
+	Text        string
+	PostAt      time.Time
+	GroupLabel  string
+}
+
+// MessageGroup represents a group of messages with the same text
+type MessageGroup struct {
+	Label    string
+	Text     string
+	Messages []*IndexedMessage
+}
+
+func main() {
+	rootCmd := &cobra.Command{
+		Use:   "./slack-scheduler",
+		Short: "Schedule Slack messages to be sent at specific times",
+		Long: `A CLI tool to schedule Slack messages with support for:
+- One-time scheduled messages
+- Recurring messages (daily, weekly, monthly)
+- Specific days of the week for weekly schedules
+- Full Slack formatting support (@mentions, emoji, etc.)
+
+Messages are scheduled using your system's local timezone.
+
+IMPORTANT: @channel, @here, and @everyone mentions are automatically converted
+to the proper Slack API format to ensure notifications are sent.`,
+		Example: `  # Send a one-time message
+  ./slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
+
+  # Send weekly until end date (start date defaults to today)
+  ./slack-scheduler -m "Weekly reminder!" -c general -t 14:00 -i weekly -e 2025-04-01
+
+  # Send every Friday from today until end date
+  ./slack-scheduler -m "TGIF!" -c general -t 14:00 -i weekly --days fri -e 2025-04-01
+
+  # Send on Monday and Friday at 9am for 8 occurrences
+  ./slack-scheduler -m "Standup time!" -c engineering -d 2025-01-13 -t 09:00 -i weekly -n 8 --days mon,fri
+
+  # Send @channel notification that actually works
+  ./slack-scheduler -m "@channel Don't forget standup!" -c general -d 2025-01-17 -t 09:00`,
+		RunE: runSchedule,
+	}
+
+	// Required flags
+	rootCmd.Flags().StringVarP(&message, "message", "m", "", "Message to send (supports @mentions, emoji, Slack formatting)")
+	rootCmd.Flags().StringVarP(&channel, "channel", "c", "", "Channel name or ID to send to")
+	rootCmd.Flags().StringVarP(&startDate, "date", "d", "", "Start date (YYYY-MM-DD)")
+	rootCmd.Flags().StringVarP(&sendTime, "time", "t", "", "Time to send (HH:MM, 24-hour format, local time)")
+
+	rootCmd.MarkFlagRequired("message")
+	rootCmd.MarkFlagRequired("channel")
+	// Note: --date is optional; defaults to today when --days or --end-date is specified
+	rootCmd.MarkFlagRequired("time")
+
+	// Optional flags
+	rootCmd.Flags().StringVarP(&interval, "interval", "i", "none", "Repeat interval: none, daily, weekly, monthly")
+	rootCmd.Flags().IntVarP(&repeatCount, "count", "n", 0, "Max number of times to send (0 = unlimited, use --end-date to limit)")
+	rootCmd.Flags().StringVarP(&endDate, "end-date", "e", "", "End date (YYYY-MM-DD). Recurrence stops on or before this date")
+	rootCmd.Flags().StringVar(&days, "days", "", "Days of week for weekly schedule (comma-separated: mon,tue,wed,thu,fri,sat,sun)")
+
+	// Init command to create credentials template
+	initCmd := &cobra.Command{
+		Use:   "init",
+		Short: "Create a credentials template file",
+		Long:  "Creates a template credentials file in the current directory that you can edit with your Slack token.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return config.CreateTemplateCredentials()
+		},
+	}
+	rootCmd.AddCommand(initCmd)
+
+	// List command to show scheduled messages
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all scheduled messages",
+		Long: `List all messages scheduled via the Slack API.
+
+Note: Messages scheduled via the API don't appear in Slack's UI "Scheduled Messages" view.
+Use this command to see and manage API-scheduled messages.
+
+Messages are automatically grouped by text content and assigned group labels (A, B, C...).`,
+		Example: `  # List all scheduled messages
+  ./slack-scheduler list
+
+  # List scheduled messages for a specific channel
+  ./slack-scheduler list -c general`,
+		RunE: runList,
+	}
+	listCmd.Flags().StringVarP(&listChannel, "channel", "c", "", "Filter by channel name or ID (optional)")
+	rootCmd.AddCommand(listCmd)
+
+	// Delete command to cancel scheduled messages
+	deleteCmd := &cobra.Command{
+		Use:   "delete [IDs or Groups...]",
+		Short: "Delete scheduled messages",
+		Long: `Delete (cancel) scheduled messages by ID or group.
+
+Use './slack-scheduler list' to find message IDs and groups.
+You can delete multiple messages at once using IDs (integers) or group labels (letters).`,
+		Example: `  # Delete specific messages by ID
+  ./slack-scheduler delete 1 2 4
+
+  # Delete all messages in a group
+  ./slack-scheduler delete A
+
+  # Mix IDs and groups
+  ./slack-scheduler delete A 4 5
+
+  # Delete all scheduled messages
+  ./slack-scheduler delete --all`,
+		RunE: runDelete,
+	}
+	deleteCmd.Flags().BoolVar(&deleteAll, "all", false, "Delete all scheduled messages")
+	rootCmd.AddCommand(deleteCmd)
+
+	// Modify command to update scheduled messages
+	modifyCmd := &cobra.Command{
+		Use:   "modify [IDs or Groups...]",
+		Short: "Modify scheduled messages",
+		Long: `Modify scheduled messages by ID or group.
+
+Since the Slack API doesn't support updating scheduled messages directly,
+this command deletes the existing messages and creates new ones with the
+updated parameters.
+
+Use './slack-scheduler list' to find message IDs and groups.
+You can modify multiple messages at once using IDs (integers) or group labels (letters).`,
+		Example: `  # Change the message text for specific messages
+  ./slack-scheduler modify 1 2 -m "New message text"
+
+  # Change all messages in group A to a new channel
+  ./slack-scheduler modify A -c new-channel
+
+  # Change the time for all messages in a group
+  ./slack-scheduler modify B -t 10:00
+
+  # Combine multiple changes
+  ./slack-scheduler modify A 3 -m "Updated text" -t 14:30 -c general`,
+		RunE: runModify,
+	}
+	modifyCmd.Flags().StringVarP(&modifyChannel, "channel", "c", "", "New channel for the messages")
+	modifyCmd.Flags().StringVarP(&modifyMessage, "message", "m", "", "New message text")
+	modifyCmd.Flags().StringVarP(&modifyTime, "time", "t", "", "New time (HH:MM, 24-hour format)")
+	rootCmd.AddCommand(modifyCmd)
+
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func runSchedule(cmd *cobra.Command, args []string) error {
+	// Validate interval
+	intervalType := types.Interval(interval)
+	if !intervalType.IsValid() {
+		return fmt.Errorf("invalid interval: %s (use: none, daily, weekly, monthly)", interval)
+	}
+
+	// Parse days of week
+	parsedDays, err := types.ParseDaysOfWeek(days)
+	if err != nil {
+		return err
+	}
+
+	// If days specified but interval is not weekly, warn user
+	if len(parsedDays) > 0 && intervalType != types.IntervalWeekly {
+		fmt.Println("Warning: --days flag is only used with weekly interval")
+	}
+
+	// If start date not provided, default to today
+	if startDate == "" {
+		// Only allow this if we have days or end-date specified (for recurring schedules)
+		if len(parsedDays) > 0 || endDate != "" || intervalType != types.IntervalNone {
+			startDate = time.Now().In(scheduler.LocalTZ).Format("2006-01-02")
+			fmt.Printf("Note: Using today (%s) as start date\n", startDate)
+		} else {
+			return fmt.Errorf("--date is required for one-time messages (or specify --days/--end-date for recurring)")
+		}
+	}
+
+	// Validate date format
+	if _, err := time.Parse("2006-01-02", startDate); err != nil {
+		return fmt.Errorf("invalid date format: %s (use YYYY-MM-DD)", startDate)
+	}
+
+	// Validate time format
+	if _, err := time.Parse("15:04", sendTime); err != nil {
+		return fmt.Errorf("invalid time format: %s (use HH:MM, 24-hour)", sendTime)
+	}
+
+	// Validate end date if provided
+	if endDate != "" {
+		if _, err := time.Parse("2006-01-02", endDate); err != nil {
+			return fmt.Errorf("invalid end date format: %s (use YYYY-MM-DD)", endDate)
+		}
+	}
+
+	// Build config
+	scheduleConfig := &types.ScheduleConfig{
+		Message:     message,
+		Channel:     channel,
+		StartDate:   startDate,
+		SendTime:    sendTime,
+		Interval:    intervalType,
+		RepeatCount: repeatCount,
+		EndDate:     endDate,
+		Days:        parsedDays,
+	}
+
+	// Load credentials
+	creds, err := config.LoadCredentials()
+	if err != nil {
+		return err
+	}
+
+	// Create Slack client and validate
+	client := slack.NewClient(creds.Token)
+	if err := client.ValidateCredentials(); err != nil {
+		return err
+	}
+	fmt.Println("✓ Credentials validated")
+
+	// Create scheduler and run
+	sched := scheduler.New(client, scheduleConfig)
+
+	// Preview what will be scheduled
+	times, err := sched.CalculateScheduleTimes()
+	if err != nil {
+		return err
+	}
+
+	// Display message with any mention conversions noted
+	displayMessage := message
+	convertedMessage := slack.ConvertMentions(message)
+	if displayMessage != convertedMessage {
+		fmt.Printf("\nNote: @channel/@here/@everyone mentions will be converted to Slack API format\n")
+		fmt.Printf("      for proper notification delivery.\n")
+	}
+
+	fmt.Printf("\nScheduling %d message(s) to #%s:\n", len(times), channel)
+	fmt.Printf("Message: %s\n\n", message)
+
+	for i, t := range times {
+		fmt.Printf("  %d. %s\n", i+1, t.Format("Mon Jan 02, 2006 at 03:04 PM MST"))
+	}
+	fmt.Println()
+
+	// Schedule the messages
+	scheduledIDs, err := sched.Schedule()
+	if err != nil {
+		return fmt.Errorf("scheduling failed: %w", err)
+	}
+
+	fmt.Printf("\n✓ Successfully scheduled %d message(s)\n", len(scheduledIDs))
+	return nil
+}
+
+// generateGroupLabel generates a group label like A, B, ..., Z, A2, B2, ...
+func generateGroupLabel(index int) string {
+	letter := 'A' + rune(index%26)
+	cycle := index / 26
+	if cycle == 0 {
+		return string(letter)
+	}
+	return fmt.Sprintf("%c%d", letter, cycle+1)
+}
+
+// parseGroupLabel parses a group label like "A", "B2" into an index
+func parseGroupLabel(label string) (int, bool) {
+	label = strings.ToUpper(strings.TrimSpace(label))
+	if len(label) == 0 {
+		return 0, false
+	}
+
+	letterChar := label[0]
+	if letterChar < 'A' || letterChar > 'Z' {
+		return 0, false
+	}
+
+	letterIndex := int(letterChar - 'A')
+
+	if len(label) == 1 {
+		return letterIndex, true
+	}
+
+	// Parse the cycle number (e.g., "2" from "A2")
+	cycleStr := label[1:]
+	cycle, err := strconv.Atoi(cycleStr)
+	if err != nil || cycle < 2 {
+		return 0, false
+	}
+
+	return letterIndex + (cycle-1)*26, true
+}
+
+// buildIndexedMessages creates IndexedMessage list from Slack messages
+func buildIndexedMessages(messages []slack.ScheduledMessage, channelNameMap map[string]string) []*IndexedMessage {
+	// Sort messages by post time for consistent ordering
+	sort.Slice(messages, func(i, j int) bool {
+		return messages[i].PostAt < messages[j].PostAt
+	})
+
+	indexed := make([]*IndexedMessage, len(messages))
+	for i, msg := range messages {
+		channelName := channelNameMap[msg.Channel]
+		if channelName == "" {
+			channelName = msg.Channel
+		}
+		indexed[i] = &IndexedMessage{
+			Index:       i + 1, // 1-based indexing
+			SlackID:     msg.ID,
+			ChannelID:   msg.Channel,
+			ChannelName: channelName,
+			Text:        msg.Text,
+			PostAt:      time.Unix(int64(msg.PostAt), 0).In(scheduler.LocalTZ),
+		}
+	}
+	return indexed
+}
+
+// groupMessages groups messages by their text content
+func groupMessages(messages []*IndexedMessage) []*MessageGroup {
+	// Group by text
+	textGroups := make(map[string][]*IndexedMessage)
+	textOrder := []string{} // Maintain order of first occurrence
+
+	for _, msg := range messages {
+		if _, exists := textGroups[msg.Text]; !exists {
+			textOrder = append(textOrder, msg.Text)
+		}
+		textGroups[msg.Text] = append(textGroups[msg.Text], msg)
+	}
+
+	// Create groups with labels
+	groups := make([]*MessageGroup, len(textOrder))
+	for i, text := range textOrder {
+		label := generateGroupLabel(i)
+		msgs := textGroups[text]
+
+		// Assign group label to each message
+		for _, msg := range msgs {
+			msg.GroupLabel = label
+		}
+
+		groups[i] = &MessageGroup{
+			Label:    label,
+			Text:     text,
+			Messages: msgs,
+		}
+	}
+
+	return groups
+}
+
+func runList(cmd *cobra.Command, args []string) error {
+	// Load credentials
+	creds, err := config.LoadCredentials()
+	if err != nil {
+		return err
+	}
+
+	// Create Slack client and validate
+	client := slack.NewClient(creds.Token)
+	if err := client.ValidateCredentials(); err != nil {
+		return err
+	}
+	fmt.Println("✓ Credentials validated")
+
+	// Resolve channel ID if provided
+	var channelID string
+	if listChannel != "" {
+		channelID, err = client.GetChannelID(listChannel)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Get scheduled messages
+	messages, err := client.ListScheduledMessages(channelID)
+	if err != nil {
+		return err
+	}
+
+	if len(messages) == 0 {
+		fmt.Println("\nNo scheduled messages found.")
+		return nil
+	}
+
+	// Get channel name map
+	channelNameMap, err := client.GetChannelNameMap()
+	if err != nil {
+		// Non-fatal, we'll just use IDs
+		channelNameMap = make(map[string]string)
+	}
+
+	// Build indexed messages and groups
+	indexed := buildIndexedMessages(messages, channelNameMap)
+	groups := groupMessages(indexed)
+
+	fmt.Printf("\nFound %d scheduled message(s) in %d group(s):\n", len(messages), len(groups))
+
+	for _, group := range groups {
+		// Convert @mentions back for display
+		displayText := slack.ConvertMentionsBack(group.Text)
+
+		fmt.Printf("\n━━━ Group %s ━━━\n", group.Label)
+		fmt.Printf("    Message: %s\n", displayText)
+
+		for _, msg := range group.Messages {
+			fmt.Printf("\n    ID: %d\n", msg.Index)
+			fmt.Printf("    Channel: #%s\n", msg.ChannelName)
+			fmt.Printf("    Scheduled: %s\n", msg.PostAt.Format("Mon Jan 02, 2006 at 03:04 PM MST"))
+		}
+	}
+	fmt.Println()
+
+	return nil
+}
+
+// isGroupLabel checks if a string is a valid group label (letter or letter+number)
+func isGroupLabel(s string) bool {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	if len(s) == 0 {
+		return false
+	}
+
+	// First character must be a letter
+	if s[0] < 'A' || s[0] > 'Z' {
+		return false
+	}
+
+	// Single letter is valid
+	if len(s) == 1 {
+		return true
+	}
+
+	// Rest must be digits >= 2
+	for _, c := range s[1:] {
+		if !unicode.IsDigit(c) {
+			return false
+		}
+	}
+
+	// Check the number is >= 2
+	if num, err := strconv.Atoi(s[1:]); err != nil || num < 2 {
+		return false
+	}
+
+	return true
+}
+
+func runDelete(cmd *cobra.Command, args []string) error {
+	// Validate arguments
+	if len(args) == 0 && !deleteAll {
+		return fmt.Errorf("must specify message IDs, group labels, or --all\nUsage: ./slack-scheduler delete [IDs or Groups...] or ./slack-scheduler delete --all")
+	}
+	if len(args) > 0 && deleteAll {
+		return fmt.Errorf("cannot specify both IDs/groups and --all")
+	}
+
+	// Load credentials
+	creds, err := config.LoadCredentials()
+	if err != nil {
+		return err
+	}
+
+	// Create Slack client and validate
+	client := slack.NewClient(creds.Token)
+	if err := client.ValidateCredentials(); err != nil {
+		return err
+	}
+	fmt.Println("✓ Credentials validated")
+
+	// Get all scheduled messages
+	messages, err := client.ListScheduledMessages("")
+	if err != nil {
+		return err
+	}
+
+	if len(messages) == 0 {
+		fmt.Println("\nNo scheduled messages found.")
+		return nil
+	}
+
+	// Get channel name map for display
+	channelNameMap, err := client.GetChannelNameMap()
+	if err != nil {
+		channelNameMap = make(map[string]string)
+	}
+
+	// Build indexed messages and groups
+	indexed := buildIndexedMessages(messages, channelNameMap)
+	groups := groupMessages(indexed)
+
+	// Create lookup maps
+	indexToMsg := make(map[int]*IndexedMessage)
+	for _, msg := range indexed {
+		indexToMsg[msg.Index] = msg
+	}
+
+	groupLabelToGroup := make(map[string]*MessageGroup)
+	for _, g := range groups {
+		groupLabelToGroup[strings.ToUpper(g.Label)] = g
+	}
+
+	// Collect messages to delete
+	toDelete := make(map[int]*IndexedMessage) // Use map to avoid duplicates
+
+	if deleteAll {
+		for _, msg := range indexed {
+			toDelete[msg.Index] = msg
+		}
+	} else {
+		for _, arg := range args {
+			arg = strings.TrimSpace(arg)
+
+			// Try to parse as integer ID first
+			if id, err := strconv.Atoi(arg); err == nil {
+				msg, exists := indexToMsg[id]
+				if !exists {
+					return fmt.Errorf("message ID %d not found (valid IDs: 1-%d)", id, len(indexed))
+				}
+				toDelete[msg.Index] = msg
+				continue
+			}
+
+			// Try to parse as group label
+			if isGroupLabel(arg) {
+				group, exists := groupLabelToGroup[strings.ToUpper(arg)]
+				if !exists {
+					validLabels := make([]string, len(groups))
+					for i, g := range groups {
+						validLabels[i] = g.Label
+					}
+					return fmt.Errorf("group %s not found (valid groups: %s)", strings.ToUpper(arg), strings.Join(validLabels, ", "))
+				}
+				for _, msg := range group.Messages {
+					toDelete[msg.Index] = msg
+				}
+				continue
+			}
+
+			return fmt.Errorf("invalid argument: %s (expected integer ID or group label like A, B, A2, etc.)", arg)
+		}
+	}
+
+	if len(toDelete) == 0 {
+		fmt.Println("\nNo messages to delete.")
+		return nil
+	}
+
+	// Sort by ID for consistent output
+	var sortedMsgs []*IndexedMessage
+	for _, msg := range toDelete {
+		sortedMsgs = append(sortedMsgs, msg)
+	}
+	sort.Slice(sortedMsgs, func(i, j int) bool {
+		return sortedMsgs[i].Index < sortedMsgs[j].Index
+	})
+
+	fmt.Printf("\nDeleting %d scheduled message(s)...\n", len(sortedMsgs))
+	deleted := 0
+	for _, msg := range sortedMsgs {
+		// Check for empty Slack ID
+		if msg.SlackID == "" {
+			fmt.Printf("  ✗ Failed to delete ID %d (#%s): no Slack message ID available\n", msg.Index, msg.ChannelName)
+			continue
+		}
+		if err := client.DeleteScheduledMessage(msg.ChannelID, msg.SlackID); err != nil {
+			fmt.Printf("  ✗ Failed to delete ID %d (#%s): %v\n", msg.Index, msg.ChannelName, err)
+			// Check if the scheduled time has passed
+			if msg.PostAt.Before(time.Now()) {
+				fmt.Printf("      Note: This message was scheduled for %s which has already passed.\n", msg.PostAt.Format("03:04 PM"))
+				fmt.Printf("      The message may have already been sent and is no longer a scheduled message.\n")
+			}
+		} else {
+			displayText := slack.ConvertMentionsBack(msg.Text)
+			if len(displayText) > 40 {
+				displayText = displayText[:40] + "..."
+			}
+			fmt.Printf("  ✓ Deleted ID %d (#%s): %s\n", msg.Index, msg.ChannelName, displayText)
+			deleted++
+		}
+	}
+	fmt.Printf("\n✓ Deleted %d message(s)\n", deleted)
+
+	return nil
+}
+
+func runModify(cmd *cobra.Command, args []string) error {
+	// Validate arguments
+	if len(args) == 0 {
+		return fmt.Errorf("must specify message IDs or group labels\nUsage: ./slack-scheduler modify [IDs or Groups...] -m \"new message\" -t 10:00 -c channel")
+	}
+
+	// Check that at least one modification is specified
+	if modifyChannel == "" && modifyMessage == "" && modifyTime == "" {
+		return fmt.Errorf("must specify at least one attribute to modify (--channel, --message, or --time)")
+	}
+
+	// Validate time format if provided
+	if modifyTime != "" {
+		if _, err := time.Parse("15:04", modifyTime); err != nil {
+			return fmt.Errorf("invalid time format: %s (use HH:MM, 24-hour)", modifyTime)
+		}
+	}
+
+	// Load credentials
+	creds, err := config.LoadCredentials()
+	if err != nil {
+		return err
+	}
+
+	// Create Slack client and validate
+	client := slack.NewClient(creds.Token)
+	if err := client.ValidateCredentials(); err != nil {
+		return err
+	}
+	fmt.Println("✓ Credentials validated")
+
+	// Get all scheduled messages
+	messages, err := client.ListScheduledMessages("")
+	if err != nil {
+		return err
+	}
+
+	if len(messages) == 0 {
+		fmt.Println("\nNo scheduled messages found.")
+		return nil
+	}
+
+	// Get channel name map for display
+	channelNameMap, err := client.GetChannelNameMap()
+	if err != nil {
+		channelNameMap = make(map[string]string)
+	}
+
+	// Build indexed messages and groups
+	indexed := buildIndexedMessages(messages, channelNameMap)
+	groups := groupMessages(indexed)
+
+	// Create lookup maps
+	indexToMsg := make(map[int]*IndexedMessage)
+	for _, msg := range indexed {
+		indexToMsg[msg.Index] = msg
+	}
+
+	groupLabelToGroup := make(map[string]*MessageGroup)
+	for _, g := range groups {
+		groupLabelToGroup[strings.ToUpper(g.Label)] = g
+	}
+
+	// Collect messages to modify
+	toModify := make(map[int]*IndexedMessage) // Use map to avoid duplicates
+
+	for _, arg := range args {
+		arg = strings.TrimSpace(arg)
+
+		// Try to parse as integer ID first
+		if id, err := strconv.Atoi(arg); err == nil {
+			msg, exists := indexToMsg[id]
+			if !exists {
+				return fmt.Errorf("message ID %d not found (valid IDs: 1-%d)", id, len(indexed))
+			}
+			toModify[msg.Index] = msg
+			continue
+		}
+
+		// Try to parse as group label
+		if isGroupLabel(arg) {
+			group, exists := groupLabelToGroup[strings.ToUpper(arg)]
+			if !exists {
+				validLabels := make([]string, len(groups))
+				for i, g := range groups {
+					validLabels[i] = g.Label
+				}
+				return fmt.Errorf("group %s not found (valid groups: %s)", strings.ToUpper(arg), strings.Join(validLabels, ", "))
+			}
+			for _, msg := range group.Messages {
+				toModify[msg.Index] = msg
+			}
+			continue
+		}
+
+		return fmt.Errorf("invalid argument: %s (expected integer ID or group label like A, B, A2, etc.)", arg)
+	}
+
+	if len(toModify) == 0 {
+		fmt.Println("\nNo messages to modify.")
+		return nil
+	}
+
+	// Resolve new channel ID if changing channel
+	var newChannelID string
+	if modifyChannel != "" {
+		newChannelID, err = client.GetChannelID(modifyChannel)
+		if err != nil {
+			return fmt.Errorf("failed to resolve new channel: %w", err)
+		}
+	}
+
+	// Sort by ID for consistent output
+	var sortedMsgs []*IndexedMessage
+	for _, msg := range toModify {
+		sortedMsgs = append(sortedMsgs, msg)
+	}
+	sort.Slice(sortedMsgs, func(i, j int) bool {
+		return sortedMsgs[i].Index < sortedMsgs[j].Index
+	})
+
+	// Preview changes
+	fmt.Printf("\nModifying %d scheduled message(s):\n", len(sortedMsgs))
+	if modifyChannel != "" {
+		fmt.Printf("  New channel: #%s\n", modifyChannel)
+	}
+	if modifyMessage != "" {
+		displayMsg := modifyMessage
+		if len(displayMsg) > 50 {
+			displayMsg = displayMsg[:47] + "..."
+		}
+		fmt.Printf("  New message: %s\n", displayMsg)
+	}
+	if modifyTime != "" {
+		fmt.Printf("  New time: %s\n", modifyTime)
+	}
+	fmt.Println()
+
+	// Process each message: delete old, create new
+	modified := 0
+	for _, msg := range sortedMsgs {
+		// Determine new values
+		targetChannelID := msg.ChannelID
+		targetChannelName := msg.ChannelName
+		if modifyChannel != "" {
+			targetChannelID = newChannelID
+			targetChannelName = modifyChannel
+		}
+
+		targetMessage := slack.ConvertMentionsBack(msg.Text)
+		if modifyMessage != "" {
+			targetMessage = modifyMessage
+		}
+
+		targetTime := msg.PostAt
+		if modifyTime != "" {
+			parts := strings.Split(modifyTime, ":")
+			hour, _ := strconv.Atoi(parts[0])
+			min, _ := strconv.Atoi(parts[1])
+			targetTime = time.Date(
+				msg.PostAt.Year(), msg.PostAt.Month(), msg.PostAt.Day(),
+				hour, min, 0, 0, msg.PostAt.Location(),
+			)
+		}
+
+		// Skip if the new time would be in the past
+		if targetTime.Before(time.Now()) {
+			fmt.Printf("  ⚠ Skipping ID %d: new time %s is in the past\n", msg.Index, targetTime.Format("2006-01-02 15:04"))
+			continue
+		}
+
+		// Delete old message
+		if err := client.DeleteScheduledMessage(msg.ChannelID, msg.SlackID); err != nil {
+			fmt.Printf("  ✗ Failed to delete ID %d: %v\n", msg.Index, err)
+			continue
+		}
+
+		// Create new message
+		newID, err := client.ScheduleMessage(targetChannelID, targetMessage, targetTime)
+		if err != nil {
+			fmt.Printf("  ✗ Failed to reschedule ID %d: %v\n", msg.Index, err)
+			fmt.Printf("      Original message was deleted but could not be rescheduled!\n")
+			continue
+		}
+
+		displayText := targetMessage
+		if len(displayText) > 40 {
+			displayText = displayText[:37] + "..."
+		}
+		fmt.Printf("  ✓ Modified ID %d → new ID %s (#%s, %s)\n",
+			msg.Index, newID, targetChannelName, targetTime.Format("Jan 02 15:04"))
+		modified++
+	}
+
+	fmt.Printf("\n✓ Modified %d message(s)\n", modified)
+	return nil
+}
