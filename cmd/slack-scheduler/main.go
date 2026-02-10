@@ -57,6 +57,39 @@ type MessageGroup struct {
 	Messages []*IndexedMessage
 }
 
+// processEscapeSequences converts literal escape sequences in a string
+// to their actual characters. This is needed because when users pass
+// messages via the -m CLI flag with \n, the shell passes them as literal
+// backslash + n characters rather than actual newlines.
+//
+// Supported sequences: \n (newline), \t (tab), \\ (literal backslash)
+func processEscapeSequences(s string) string {
+	var result strings.Builder
+	result.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case 'n':
+				result.WriteByte('\n')
+				i += 2
+				continue
+			case 't':
+				result.WriteByte('\t')
+				i += 2
+				continue
+			case '\\':
+				result.WriteByte('\\')
+				i += 2
+				continue
+			}
+		}
+		result.WriteByte(s[i])
+		i++
+	}
+	return result.String()
+}
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "./slack-scheduler",
@@ -66,11 +99,16 @@ func main() {
 - Recurring messages (daily, weekly, monthly)
 - Specific days of the week for weekly schedules
 - Full Slack formatting support (@mentions, #channel links, emoji, etc.)
+- Multi-line messages with bullet lists (use \n for line breaks)
 
 Messages are scheduled using your system's local timezone.
 
 IMPORTANT: @channel, @here, and @everyone mentions are automatically converted
-to the proper Slack API format to ensure notifications are sent.`,
+to the proper Slack API format to ensure notifications are sent.
+
+FORMATTING: Use \n in your message for line breaks. This allows you to create
+bullet lists and multi-line messages from the command line. Use \t for tabs
+and \\ for a literal backslash.`,
 		Example: `  # Send a one-time message
   ./slack-scheduler -m "Hello team!" -c general -d 2025-01-17 -t 14:00
 
@@ -82,12 +120,15 @@ to the proper Slack API format to ensure notifications are sent.`,
 
   # @channel, @here, @everyone, @mentions work
   # So do #channel mentions:
-  ./slack-scheduler -m "@channel Hey, please check #meetings." -c general -d 2025-01-17 -t 09:00`,
+  ./slack-scheduler -m "@channel Hey, please check #meetings." -c general -d 2025-01-17 -t 09:00
+
+  # Multi-line message with bullet list (use \n for line breaks):
+  ./slack-scheduler -m "Reminders:\n- Item one\n- Item two\n    - Sub-item" -c general -d 2025-01-17 -t 09:00`,
 		RunE: runSchedule,
 	}
 
 	// Required flags
-	rootCmd.Flags().StringVarP(&message, "message", "m", "", "Message to send (supports @mentions, #channel links, emoji, Slack formatting)")
+	rootCmd.Flags().StringVarP(&message, "message", "m", "", "Message to send (supports @mentions, #channel links, emoji, Slack formatting, \\n for newlines)")
 	rootCmd.Flags().StringVarP(&channel, "channel", "c", "", "Channel name or ID to send to")
 	rootCmd.Flags().StringVarP(&startDate, "date", "d", "", "Start date (YYYY-MM-DD)")
 	rootCmd.Flags().StringVarP(&sendTime, "time", "t", "", "Time to send (HH:MM, 24-hour format, local time)")
@@ -194,6 +235,10 @@ You can modify multiple messages at once using IDs (integers) or group labels (l
 }
 
 func runSchedule(cmd *cobra.Command, args []string) error {
+	// Process escape sequences in message (e.g., \n -> newline, \t -> tab)
+	// This allows users to include line breaks in CLI input: -m "line1\nline2"
+	message = processEscapeSequences(message)
+
 	// Validate interval
 	intervalType := types.Interval(interval)
 	if !intervalType.IsValid() {
@@ -635,6 +680,11 @@ func runModify(cmd *cobra.Command, args []string) error {
 	// Validate arguments
 	if len(args) == 0 {
 		return fmt.Errorf("must specify message IDs or group labels\nUsage: ./slack-scheduler modify [IDs or Groups...] -m \"new message\" -t 10:00 -c channel")
+	}
+
+	// Process escape sequences in message if provided
+	if modifyMessage != "" {
+		modifyMessage = processEscapeSequences(modifyMessage)
 	}
 
 	// Check that at least one modification is specified

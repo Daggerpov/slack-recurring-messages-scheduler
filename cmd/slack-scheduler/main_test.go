@@ -157,3 +157,86 @@ func TestBuildIndexedMessages(t *testing.T) {
 	// We can't easily test buildIndexedMessages without mocking slack.ScheduledMessage
 	// This is mainly an integration function, so we test the components it uses
 }
+
+func TestProcessEscapeSequences(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "newline escape",
+			input: `Hello\nWorld`,
+			want:  "Hello\nWorld",
+		},
+		{
+			name:  "tab escape",
+			input: `Hello\tWorld`,
+			want:  "Hello\tWorld",
+		},
+		{
+			name:  "backslash escape",
+			input: `Hello\\World`,
+			want:  `Hello\World`,
+		},
+		{
+			name:  "double escaped backslash before n",
+			input: `Hello\\\\nWorld`,
+			want:  `Hello\\nWorld`,
+		},
+		{
+			name:  "multiple newlines",
+			input: `line1\nline2\nline3`,
+			want:  "line1\nline2\nline3",
+		},
+		{
+			name:  "bullet list with newlines",
+			input: `Reminders:\n- Item one\n- Item two\n    - Sub-item`,
+			want:  "Reminders:\n- Item one\n- Item two\n    - Sub-item",
+		},
+		{
+			name:  "complex bullet list",
+			input: `Hey, quick reminders to:\n\n- Once event details confirmed (by 1 pm):\n    - Send out a message to #availability\n    - Update our Google Calendar\n- Once media finalized:\n    - Update & send out newsletter`,
+			want:  "Hey, quick reminders to:\n\n- Once event details confirmed (by 1 pm):\n    - Send out a message to #availability\n    - Update our Google Calendar\n- Once media finalized:\n    - Update & send out newsletter",
+		},
+		{
+			name:  "no escape sequences",
+			input: "Hello World",
+			want:  "Hello World",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "trailing backslash",
+			input: `Hello\`,
+			want:  `Hello\`,
+		},
+		{
+			name:  "backslash before unknown char",
+			input: `Hello\xWorld`,
+			want:  `Hello\xWorld`,
+		},
+		{
+			name:  "already has real newlines (passthrough)",
+			input: "Hello\nWorld",
+			want:  "Hello\nWorld",
+		},
+		{
+			name:  "escaped backslash preserves literal backslash-n",
+			input: `Hello\\nWorld`,
+			want:  "Hello\\nWorld",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := processEscapeSequences(tt.input)
+			if got != tt.want {
+				t.Errorf("processEscapeSequences(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
